@@ -31,6 +31,23 @@ REAL_CHECKOUT_AVAILABLE = bool(
 _BASE_URL = "https://api.razorpay.com/v1"
 
 
+def create_or_get_customer(name: str, email: str) -> dict:
+    """Real Razorpay Customer record for a TechBazaar account -- fail_existing="0" makes this
+    idempotent (verified against the real API: calling it twice with the same email returns the
+    exact same customer id, not an error), so callers can call this on every checkout without
+    tracking "have we already created this" themselves. Purpose: pass this id into Checkout so
+    Razorpay's own widget can offer to save a card/UPI method and recognize the same person on a
+    later purchase -- the actual card data is tokenized and held by Razorpay, never by us."""
+    resp = requests.post(
+        f"{_BASE_URL}/customers",
+        auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+        json={"name": name, "email": email, "fail_existing": "0"},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 def create_order(amount_inr: int, receipt: str) -> dict:
     resp = requests.post(
         f"{_BASE_URL}/orders",
