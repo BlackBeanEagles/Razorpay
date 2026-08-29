@@ -493,11 +493,18 @@ def execute_purchase(signed_mandate_token: str, product_id: str, amount_inr: int
     return result
 
 
-def initiate_purchase(signed_mandate_token: str, product_id: str, amount_inr: int, requesting_customer_id: str = None) -> dict:
+def initiate_purchase(signed_mandate_token: str, product_id: str, amount_inr: int, requesting_customer_id: str = None,
+                       razorpay_customer_id: str = None) -> dict:
     """Human-verified purchase, step 1: enforce the mandate (identical rules to
     execute_purchase), then -- if allowed -- create a REAL Razorpay test-mode order and hand
     back the details needed to open real Checkout. Does not verify or update mandate spend;
-    that only happens once confirm_purchase() sees an actual captured payment."""
+    that only happens once confirm_purchase() sees an actual captured payment.
+
+    razorpay_customer_id: the caller's real Razorpay Customer id (see
+    api.customer_auth.get_or_create_razorpay_customer_id), if any -- passed through to the
+    frontend's Checkout config so Razorpay's own widget can offer to save a card/UPI method and
+    recognize this same person on a later purchase. Guardrail never sees or stores the actual
+    card data either way; this only tells Checkout who's paying, not how."""
     mandate_check = check_mandate(signed_mandate_token, amount_inr)
     if not mandate_check["allowed"]:
         result = {"status": "blocked", "checkout": None, "reason": mandate_check["reason"]}
@@ -536,7 +543,8 @@ def initiate_purchase(signed_mandate_token: str, product_id: str, amount_inr: in
     return result
 
 
-def resolve_purchase(signed_mandate_token: str, product_id: str, amount_inr: int, requesting_customer_id: str = None) -> dict:
+def resolve_purchase(signed_mandate_token: str, product_id: str, amount_inr: int, requesting_customer_id: str = None,
+                      razorpay_customer_id: str = None) -> dict:
     """Single entry point the agent orchestration (agent.py, llm_agent.py) calls for the "buy"
     step: uses the real, human-verified Checkout flow when real Razorpay credentials are
     configured (status "checkout_required" -- payment isn't done yet, a human needs to complete
@@ -544,7 +552,7 @@ def resolve_purchase(signed_mandate_token: str, product_id: str, amount_inr: int
     flow (status "success"/"blocked"/"failed_verification", resolved immediately). Same
     mandate enforcement either way."""
     if razorpay_rest.REAL_CHECKOUT_AVAILABLE:
-        return initiate_purchase(signed_mandate_token, product_id, amount_inr, requesting_customer_id)
+        return initiate_purchase(signed_mandate_token, product_id, amount_inr, requesting_customer_id, razorpay_customer_id)
     return execute_purchase(signed_mandate_token, product_id, amount_inr, requesting_customer_id=requesting_customer_id)
 
 
