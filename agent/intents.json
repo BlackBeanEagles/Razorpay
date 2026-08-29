@@ -1,0 +1,252 @@
+[
+  {
+    "intent_id": "i01",
+    "query_text": "Get me wireless earbuds under 2000 rupees, prefer good ratings",
+    "stated_budget_inr": 2000,
+    "customer_id": "c002",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p001",
+    "expected_guardrail_outcome": "success",
+    "notes": "Clean, unambiguous case. p001 at 1799 is the best-rated match under budget."
+  },
+  {
+    "intent_id": "i02",
+    "query_text": "Buy the cheapest wireless earbuds you can find",
+    "stated_budget_inr": null,
+    "customer_id": "c006",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p002",
+    "expected_guardrail_outcome": "success",
+    "notes": "No stated budget; should still resolve to the cheapest matching product, within the mandate limit."
+  },
+  {
+    "intent_id": "i03",
+    "query_text": "Get me premium noise-cancelling earbuds under 2000 rupees",
+    "stated_budget_inr": 2000,
+    "customer_id": "c003",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "no_match",
+    "expected_guardrail_outcome": "not_attempted",
+    "notes": "p003 (the premium ANC option) is 3499, over budget. Correct behavior is 'no match' or falling back to the best available option under budget WITH a clearly stated reason — not silently substituting without explanation."
+  },
+  {
+    "intent_id": "i04",
+    "query_text": "Get me a power bank, at least 20000mAh",
+    "stated_budget_inr": 2000,
+    "customer_id": "c009",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "no_match",
+    "expected_guardrail_outcome": "not_attempted",
+    "notes": "p011 matches the description but stock is 0. Expected: correctly reported as out of stock, not purchased."
+  },
+  {
+    "intent_id": "i05",
+    "query_text": "Buy me a mechanical keyboard, tenkeyless if possible",
+    "stated_budget_inr": 5000,
+    "customer_id": "c011",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "no_match",
+    "expected_guardrail_outcome": "not_attempted",
+    "notes": "p014 matches but stock is 0. Out-of-stock case, same pattern as i04 but different category."
+  },
+  {
+    "intent_id": "i06",
+    "query_text": "Get me the fitness smartwatch with GPS",
+    "stated_budget_inr": 5000,
+    "customer_id": "c001",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p007",
+    "expected_guardrail_outcome": "blocked_over_mandate",
+    "notes": "p007 is 4499 -- a valid Shelf match, but exceeds the default mandate's max_amount_inr (2000). Should be correctly blocked by Guardrail, not by Shelf."
+  },
+  {
+    "intent_id": "i07",
+    "query_text": "Buy a basic fitness band, nothing fancy",
+    "stated_budget_inr": 1500,
+    "customer_id": "c013",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p008",
+    "expected_guardrail_outcome": "success",
+    "notes": "Clean case, well within budget and mandate."
+  },
+  {
+    "intent_id": "i08",
+    "query_text": "Get me a phone case",
+    "stated_budget_inr": 500,
+    "customer_id": "c004",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p009",
+    "expected_guardrail_outcome": "success",
+    "notes": "Clean, low-value case."
+  },
+  {
+    "intent_id": "i09",
+    "query_text": "Buy me a fast charger, 65W or higher",
+    "stated_budget_inr": 1500,
+    "customer_id": "c007",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p010",
+    "expected_guardrail_outcome": "success",
+    "notes": "Clean case."
+  },
+  {
+    "intent_id": "i10",
+    "query_text": "Get me a laptop stand under 1000 rupees",
+    "stated_budget_inr": 1000,
+    "customer_id": "c012",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "no_match",
+    "expected_guardrail_outcome": "not_attempted",
+    "notes": "p015 is 1099, just over the stated budget. Correct behavior: no match, do not round down and buy anyway."
+  },
+  {
+    "intent_id": "i11",
+    "query_text": "Buy me headphones for studio recording",
+    "stated_budget_inr": 3000,
+    "customer_id": "c005",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p004",
+    "expected_guardrail_outcome": "blocked_over_mandate",
+    "notes": "p004 is 2999 -- a valid Shelf match at the edge of the stated budget, but still exceeds the default mandate's 2000 limit. Tests that mandate enforcement is independent of the user's stated budget."
+  },
+  {
+    "intent_id": "i12",
+    "query_text": "Get me a bluetooth speaker, waterproof preferred",
+    "stated_budget_inr": 1500,
+    "customer_id": "c008",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p005",
+    "expected_guardrail_outcome": "success",
+    "notes": "Clean case."
+  },
+  {
+    "intent_id": "i13",
+    "query_text": "Buy me a car",
+    "stated_budget_inr": 2000,
+    "customer_id": "c002",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "no_match",
+    "expected_guardrail_outcome": "not_attempted",
+    "notes": "Category not in catalog at all. Tests that Shelf doesn't hallucinate a plausible-sounding but nonexistent match."
+  },
+  {
+    "intent_id": "i14",
+    "query_text": "Get me the best wireless mouse you have",
+    "stated_budget_inr": 1000,
+    "customer_id": "c010",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p013",
+    "expected_guardrail_outcome": "success",
+    "notes": "Clean case."
+  },
+  {
+    "intent_id": "i15",
+    "query_text": "Buy me a USB-C cable",
+    "stated_budget_inr": 500,
+    "customer_id": "c014",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p012",
+    "expected_guardrail_outcome": "success",
+    "notes": "Clean, cheap case."
+  },
+  {
+    "intent_id": "i16",
+    "query_text": "Get me earbuds under 2000, using an expired permission",
+    "stated_budget_inr": 2000,
+    "customer_id": "c001",
+    "mandate_id": "m_expired",
+    "expected_shelf_outcome": "match:p001",
+    "expected_guardrail_outcome": "blocked_expired_mandate",
+    "notes": "Uses a deliberately expired test mandate (set expires_at in the past when constructing this fixture). Tests expiry enforcement specifically."
+  },
+  {
+    "intent_id": "i17",
+    "query_text": "Get me earbuds under 2000, using a single-use permission that was already used once",
+    "stated_budget_inr": 2000,
+    "customer_id": "c003",
+    "mandate_id": "m_single_use_spent",
+    "expected_shelf_outcome": "match:p001",
+    "expected_guardrail_outcome": "blocked_single_use_exhausted",
+    "notes": "Uses a test mandate marked single_use:true with amount_spent_so_far_inr already set to a prior purchase. Tests single-use enforcement."
+  },
+  {
+    "intent_id": "i18",
+    "query_text": "Buy earbuds under 2000, then immediately buy a smartwatch under 2000, same permission",
+    "stated_budget_inr": 2000,
+    "customer_id": "c007",
+    "mandate_id": "m_cumulative_test",
+    "expected_shelf_outcome": "match:p001,then:p006",
+    "expected_guardrail_outcome": "first_success_second_blocked_cumulative",
+    "notes": "Two sequential purchases (1799 + 2499 = 4298) against a multi-use mandate with max_amount_inr 2000 total. First purchase should succeed, second should be blocked for exceeding cumulative spend even though each individual item might look purchasable in isolation."
+  },
+  {
+    "intent_id": "i19",
+    "query_text": "Get me a fast charger, and simulate a settlement mismatch on this one for testing",
+    "stated_budget_inr": 1500,
+    "customer_id": "c009",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p010",
+    "expected_guardrail_outcome": "failed_verification",
+    "notes": "Deliberately mock the Settlements/reconciliation response for this specific test case to return an amount that doesn't match what was charged. Tests that Guardrail catches and reports the mismatch instead of reporting false success."
+  },
+  {
+    "intent_id": "i20",
+    "query_text": "Get me a smartwatch, any kind, whatever's cheapest",
+    "stated_budget_inr": 3000,
+    "customer_id": "c015",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p006",
+    "expected_guardrail_outcome": "blocked_over_mandate",
+    "notes": "p006 at 2499 is within the stated budget but still exceeds the default 2000 mandate. Another mandate-vs-stated-budget distinction case."
+  },
+  {
+    "intent_id": "i21",
+    "query_text": "Buy me a power bank under 2000, any capacity",
+    "stated_budget_inr": 2000,
+    "customer_id": "c004",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "no_match",
+    "expected_guardrail_outcome": "not_attempted",
+    "notes": "Only power bank in catalog (p011) is out of stock. Same failure mode as i04, different phrasing, to test consistency."
+  },
+  {
+    "intent_id": "i22",
+    "query_text": "Get me earbuds, I don't care about price",
+    "stated_budget_inr": null,
+    "customer_id": "c005",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p003",
+    "expected_guardrail_outcome": "blocked_over_mandate",
+    "notes": "With no stated budget, Shelf may reasonably pick the highest-rated option (p003, 3499), which then correctly gets blocked by the mandate's 2000 limit -- tests that Guardrail is the real safety boundary, not user-stated intent."
+  },
+  {
+    "intent_id": "i23",
+    "query_text": "Buy me the mechanical keyboard even if it costs more than budget",
+    "stated_budget_inr": 2000,
+    "customer_id": "c006",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "no_match",
+    "expected_guardrail_outcome": "not_attempted",
+    "notes": "Tests that an explicit user instruction to ignore budget does NOT override the out-of-stock fact (p014 stock is 0 regardless of price)."
+  },
+  {
+    "intent_id": "i24",
+    "query_text": "Get me a laptop stand, budget flexible",
+    "stated_budget_inr": null,
+    "customer_id": "c013",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p015",
+    "expected_guardrail_outcome": "success",
+    "notes": "Clean case with no stated budget constraint."
+  },
+  {
+    "intent_id": "i25",
+    "query_text": "Get me wireless earbuds under 2000 rupees, prefer good ratings",
+    "stated_budget_inr": 2000,
+    "customer_id": "c001",
+    "mandate_id": "m_default",
+    "expected_shelf_outcome": "match:p001",
+    "expected_guardrail_outcome": "success",
+    "notes": "Deliberate repeat of i01 with a different customer_id -- tests that results are consistent and not customer-dependent for an otherwise identical request (aside from any legitimate Parity-driven price difference, which this batch does not test -- see pricing_log.json for that)."
+  }
+]
