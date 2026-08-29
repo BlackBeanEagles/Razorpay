@@ -1,7 +1,6 @@
 """Acceptance tests for Parity (spec section 5)."""
 import json
 import os
-import statistics
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))

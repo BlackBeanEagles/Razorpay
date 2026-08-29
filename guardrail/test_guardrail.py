@@ -1,5 +1,4 @@
 """Acceptance tests for Guardrail (spec section 6)."""
-import json
 import os
 import sys
 

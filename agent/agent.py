@@ -151,6 +151,17 @@ def run_chat_turn_stream(message: str, customer_id: str, mandate_id: str):
 
 
 def run_all_intents():
+    # Isolated from the real guardrail/mandates.json and guardrail/ledger.json -- this is a
+    # standalone `python agent/agent.py` CLI demo, run directly by a person, not through the
+    # API server. reset_mandate_store() rebuilds the mandate store from seed fixtures,
+    # discarding anything not in that seed -- against the real store, running this demo would
+    # wipe any actual in-progress mandate (a real customer's, or an external AI buyer's
+    # mid-checkout purchase over MCP). See guardrail.use_isolated_store's docstring -- exactly
+    # this class of bug was found and fixed in every other test/batch entry point this session;
+    # this standalone demo runner had the same exposure and was the last one still open to it.
+    mandate_path = os.path.join(os.path.dirname(__file__), "_isolated_demo_mandates.json")
+    ledger_path = os.path.join(os.path.dirname(__file__), "_isolated_demo_ledger.json")
+    guardrail.use_isolated_store(mandate_path, ledger_path)
     guardrail.reset_mandate_store()
     with open(INTENTS_PATH, encoding="utf-8") as f:
         intents = json.load(f)
