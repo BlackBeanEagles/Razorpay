@@ -28,7 +28,8 @@ from guardrail import guardrail
 from growth.upsell import suggest_complementary
 from negotiation.negotiation import propose_price
 from api.routes.catalog import add_product_to_catalog, catalog_overview
-from agent.groq_client import chat_completion, LLM_AVAILABLE
+from api.customer_auth import get_or_create_razorpay_customer_id
+from agent.groq_client import chat_completion
 
 MAX_TOOL_ITERATIONS = 6
 
@@ -196,7 +197,15 @@ def _execute_tool(name: str, args: dict, customer_id: str, mandate_id: str):
         # resolve_purchase hands off to real, human-verified Razorpay Checkout when real
         # credentials are configured (status "checkout_required"), else completes immediately
         # via the automated mock flow -- see guardrail.py's docstring on resolve_purchase.
-        result = guardrail.resolve_purchase(token, args["product_id"], args["amount_inr"], requesting_customer_id=customer_id)
+        # razorpay_customer_id (real, tokenized on Razorpay's side -- see
+        # api.customer_auth.get_or_create_razorpay_customer_id) lets Checkout recognize a
+        # returning customer and offer their saved card/UPI method; this app never sees the
+        # actual card data either way, only Razorpay's opaque customer id.
+        razorpay_customer_id = get_or_create_razorpay_customer_id(customer_id)
+        result = guardrail.resolve_purchase(
+            token, args["product_id"], args["amount_inr"],
+            requesting_customer_id=customer_id, razorpay_customer_id=razorpay_customer_id,
+        )
         return result, {"stage": "guardrail", "status": result["status"], "detail": result}
 
     if name == "add_product":

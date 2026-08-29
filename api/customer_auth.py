@@ -122,6 +122,32 @@ def email_for_customer(customer_id: str) -> str:
     return ""
 
 
+def get_or_create_razorpay_customer_id(customer_id: str) -> str | None:
+    """The real Razorpay Customer id for this account, creating (or, idempotently, re-fetching)
+    it on first use and caching it on the account from then on -- so Checkout can be told
+    "this is the same person as last time" and offer their saved card/UPI method, without this
+    app ever storing or seeing the actual card data itself (see razorpay_rest.create_or_get_customer).
+    Returns None if there's no such account, no email on file, or real Razorpay credentials
+    aren't configured (mock mode has no real Razorpay customers to create)."""
+    from guardrail import razorpay_rest
+    if not razorpay_rest.REAL_CHECKOUT_AVAILABLE:
+        return None
+    with _lock:
+        accounts = _load_accounts()
+        username = next((u for u, a in accounts.items() if a.get("customer_id") == customer_id), None)
+        if username is None:
+            return None
+        account = accounts[username]
+        if account.get("razorpay_customer_id"):
+            return account["razorpay_customer_id"]
+        if not account.get("email"):
+            return None
+        customer = razorpay_rest.create_or_get_customer(account["name"], account["email"])
+        account["razorpay_customer_id"] = customer["id"]
+        _save_accounts(accounts)
+        return customer["id"]
+
+
 def verify_login(username: str, password: str) -> dict | None:
     accounts = _load_accounts()
     account = accounts.get(username)

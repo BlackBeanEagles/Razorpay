@@ -191,6 +191,76 @@ def test_revocation_persists_across_a_fresh_module_load():
         _clear_revocations()
 
 
+_ISOLATED_ACCOUNTS_PATH = os.path.join(os.path.dirname(__file__), "_isolated_test_customers_auth.json")
+
+
+def _isolate_accounts(accounts: dict):
+    """Points customer_auth's account store at an isolated file for the duration of one test --
+    never the real api/customers_auth.json, which holds real signed-up test-customer accounts."""
+    import json
+    with open(_ISOLATED_ACCOUNTS_PATH, "w", encoding="utf-8") as f:
+        json.dump(accounts, f)
+    customer_auth.CUSTOMERS_AUTH_PATH = _ISOLATED_ACCOUNTS_PATH
+
+
+def _cleanup_isolated_accounts():
+    if os.path.exists(_ISOLATED_ACCOUNTS_PATH):
+        os.remove(_ISOLATED_ACCOUNTS_PATH)
+    customer_auth.CUSTOMERS_AUTH_PATH = os.path.join(os.path.dirname(customer_auth.__file__), "customers_auth.json")
+
+
+def test_get_or_create_razorpay_customer_id_returns_none_in_mock_mode(monkeypatch):
+    # No real Razorpay credentials configured -- there's no real Customers API to call, so this
+    # must not attempt one (and must not crash trying).
+    from guardrail import razorpay_rest
+    monkeypatch.setattr(razorpay_rest, "REAL_CHECKOUT_AVAILABLE", False)
+    _isolate_accounts({"u1": {"customer_id": "c500", "email": "u1@example.com", "name": "U1"}})
+    try:
+        assert customer_auth.get_or_create_razorpay_customer_id("c500") is None
+    finally:
+        _cleanup_isolated_accounts()
+
+
+def test_get_or_create_razorpay_customer_id_unknown_customer_returns_none(monkeypatch):
+    from guardrail import razorpay_rest
+    monkeypatch.setattr(razorpay_rest, "REAL_CHECKOUT_AVAILABLE", True)
+    _isolate_accounts({})
+    try:
+        assert customer_auth.get_or_create_razorpay_customer_id("c_does_not_exist") is None
+    finally:
+        _cleanup_isolated_accounts()
+
+
+def test_get_or_create_razorpay_customer_id_no_email_returns_none(monkeypatch):
+    from guardrail import razorpay_rest
+    monkeypatch.setattr(razorpay_rest, "REAL_CHECKOUT_AVAILABLE", True)
+    _isolate_accounts({"u1": {"customer_id": "c501", "name": "U1"}})  # no "email" key
+    try:
+        assert customer_auth.get_or_create_razorpay_customer_id("c501") is None
+    finally:
+        _cleanup_isolated_accounts()
+
+
+def test_get_or_create_razorpay_customer_id_creates_once_then_caches(monkeypatch):
+    # Network never actually hit -- create_or_get_customer is monkeypatched with a call counter,
+    # so this proves both "it's called to create the real customer" AND "a second call for the
+    # same account reuses the cached id instead of hitting the API again."
+    from guardrail import razorpay_rest
+    monkeypatch.setattr(razorpay_rest, "REAL_CHECKOUT_AVAILABLE", True)
+    calls = []
+    monkeypatch.setattr(razorpay_rest, "create_or_get_customer",
+                         lambda name, email: calls.append((name, email)) or {"id": "cust_fake123"})
+    _isolate_accounts({"u1": {"customer_id": "c502", "email": "u1@example.com", "name": "U1"}})
+    try:
+        first = customer_auth.get_or_create_razorpay_customer_id("c502")
+        second = customer_auth.get_or_create_razorpay_customer_id("c502")
+        assert first == "cust_fake123"
+        assert second == "cust_fake123"
+        assert len(calls) == 1  # only the first call actually hit "Razorpay"
+    finally:
+        _cleanup_isolated_accounts()
+
+
 if __name__ == "__main__":
     test_customer_token_does_not_verify_as_admin()
     test_admin_token_does_not_verify_as_customer()

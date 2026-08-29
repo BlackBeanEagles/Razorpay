@@ -12,7 +12,7 @@ from pydantic import BaseModel
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from guardrail import guardrail
 from growth.upsell import suggest_complementary
-from api.customer_auth import require_customer
+from api.customer_auth import require_customer, get_or_create_razorpay_customer_id
 
 router = APIRouter()
 
@@ -45,7 +45,11 @@ def initiate(body: InitiateRequest, customer_id: str = Depends(require_customer)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Unknown mandate_id: {body.mandate_id}")
     try:
-        return guardrail.initiate_purchase(token, body.product_id, body.amount_inr, requesting_customer_id=customer_id)
+        razorpay_customer_id = get_or_create_razorpay_customer_id(customer_id)
+        return guardrail.initiate_purchase(
+            token, body.product_id, body.amount_inr,
+            requesting_customer_id=customer_id, razorpay_customer_id=razorpay_customer_id,
+        )
     except _EXPECTED_UPSTREAM_ERRORS as e:
         raise HTTPException(status_code=502, detail=f"Could not reach Razorpay to create the order: {e}")
 
