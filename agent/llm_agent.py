@@ -26,6 +26,7 @@ from shelf.shelf import search_catalog
 from parity.parity import check_price_fairness
 from guardrail import guardrail
 from growth.upsell import suggest_complementary
+from negotiation.negotiation import propose_price
 from api.routes.catalog import add_product_to_catalog, catalog_overview
 from agent.groq_client import chat_completion, LLM_AVAILABLE
 
@@ -33,11 +34,14 @@ MAX_TOOL_ITERATIONS = 6
 
 SYSTEM_PROMPT = """You are the Guardrail shopping agent for TechBazaar, a test-mode e-commerce store. You're helpful and personable, not robotic -- talk like a sharp, honest salesperson who'd rather lose a sale than mislead someone, not like a form printing out tool results.
 
-You have six tools. First decide whether the message is BROWSING or an explicit BUY:
+You have seven tools. First decide whether the message is BROWSING, an explicit BUY, or a NEGOTIATE:
 - BUY: it uses a clear purchase verb/phrase -- "buy", "purchase", "order", "get me", "I'll take it", "add to cart", "I want to buy", "go ahead and get it", or a yes/confirmation reply to a product YOU just proposed.
+- NEGOTIATE: the customer explicitly wants to haggle -- "make an offer", "negotiate", "would you take X for it", "can I get it cheaper than that".
 - BROWSING: everything else that names or implies a product interest with no purchase verb -- "wireless earbuds under 1000", "earbuds", "something for the gym", "what about a smartwatch rated 4.4+". This is the common case: most people describing what they want are asking you to find and show it, not authorizing a real charge on the spot.
 
 For BROWSING, call search_catalog ONLY, then STOP: present the match (name, price, rating, and why it matched) and ask if they'd like you to buy it. Do NOT call check_price_fairness or execute_purchase for a browsing message -- there is nothing more pushy or confusing than a shopper casually mentioning "earbuds" and getting back "sorry, that purchase was blocked" for a purchase they never asked you to attempt.
+
+For NEGOTIATE, after search_catalog has matched exactly one product: call negotiate_price with the customer's offer (round_number starting at 1). If it says "accept", tell them the deal is on and call execute_purchase at agreed_price_inr (not the original listed price). If it says "counter", relay the counter price and reason plainly, and ask if they want to accept it (call negotiate_price again with that exact counter price to close, round_number+1) or try another number. If it says "reject", say plainly that no agreement was reached and offer to buy at the listed price instead. Never invent your own counter-offer or claim a price is agreed unless negotiate_price itself said "accept".
 
 For BUY, run the full pipeline in order:
 1. search_catalog -- typo/partial-word tolerant, so it can return more than one product when it isn't sure ("possible match" in the reason field) instead of one confident exact match. If it returns no matches, stop and tell the user why (use no_match_reason verbatim). If it returns MORE THAN ONE match, stop and list them for the user (name and price each) and ask which one they meant -- never guess by picking one yourself, and never call check_price_fairness or execute_purchase until they've confirmed a single product.
@@ -102,6 +106,22 @@ TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
+            "name": "negotiate_price",
+            "description": "Propose a price for a product instead of buying at the listed price -- only call this when the customer explicitly asks to negotiate/haggle/make an offer. Returns accept (proceed to execute_purchase at agreed_price_inr), counter (call again with a new offer, round_number+1, to keep going), or reject (buy at listed price or give up). Never invents a counter price itself -- it's Razorpay's own fairness engine's real floor.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "product_id": {"type": "string"},
+                    "offered_price_inr": {"type": "number"},
+                    "round_number": {"type": "integer", "description": "1 for the opening offer, incrementing each subsequent round."},
+                },
+                "required": ["product_id", "offered_price_inr"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "add_product",
             "description": "List a new product in the catalog on the customer's behalf (marketplace-style listing). Only call once all required fields are known.",
             "parameters": {
@@ -160,6 +180,10 @@ def _execute_tool(name: str, args: dict, customer_id: str, mandate_id: str):
     if name == "check_price_fairness":
         result = check_price_fairness(args["product_id"], customer_id, args["offered_price_inr"])
         return result, {"stage": "parity", "status": result["verdict"], "detail": result}
+
+    if name == "negotiate_price":
+        result = propose_price(args["product_id"], args["offered_price_inr"], customer_id, args.get("round_number", 1))
+        return result, {"stage": "negotiation", "status": result["verdict"], "detail": result}
 
     if name == "execute_purchase":
         try:
