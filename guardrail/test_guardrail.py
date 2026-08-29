@@ -325,6 +325,79 @@ def test_concurrent_confirm_of_the_same_order_never_double_counts_spend():
         razorpay_rest.captured_amount_inr = orig_captured
 
 
+def test_get_pending_purchase_returns_none_for_unknown_order():
+    setup()
+    assert guardrail.get_pending_purchase("order_does_not_exist") is None
+
+
+def test_initiate_purchase_records_a_pending_purchase_for_the_webhook_to_find():
+    # The whole point of pending_purchases.json: if the browser that opened Checkout never
+    # comes back to call confirm_purchase itself, the payment webhook needs everything --
+    # mandate_id, product_id, amount, customer -- to independently confirm the same purchase.
+    from guardrail import razorpay_rest
+    setup()
+    orig_create_order = razorpay_rest.create_order
+    razorpay_rest.create_order = lambda amount_inr, receipt: {"id": "order_pending_test_1"}
+    try:
+        token = guardrail.get_mandate_token("m_default")
+        result = guardrail.initiate_purchase(token, "p001", 500, requesting_customer_id="c777")
+        assert result["status"] == "checkout_required"
+        pending = guardrail.get_pending_purchase("order_pending_test_1")
+        assert pending is not None
+        assert pending["mandate_id"] == "m_default"
+        assert pending["product_id"] == "p001"
+        assert pending["amount_inr"] == 500
+        assert pending["requesting_customer_id"] == "c777"
+    finally:
+        razorpay_rest.create_order = orig_create_order
+
+
+def test_confirm_purchase_clears_the_pending_record_on_success():
+    from guardrail import razorpay_rest
+    setup()
+    orig_create_order = razorpay_rest.create_order
+    orig_captured = razorpay_rest.captured_amount_inr
+    razorpay_rest.create_order = lambda amount_inr, receipt: {"id": "order_pending_test_2"}
+    razorpay_rest.captured_amount_inr = lambda order_id: 500
+    try:
+        token = guardrail.get_mandate_token("m_default")
+        guardrail.initiate_purchase(token, "p001", 500, requesting_customer_id="c777")
+        assert guardrail.get_pending_purchase("order_pending_test_2") is not None
+
+        result = guardrail.confirm_purchase("m_default", "p001", 500, "order_pending_test_2", requesting_customer_id="c777")
+        assert result["status"] == "success"
+        assert guardrail.get_pending_purchase("order_pending_test_2") is None
+    finally:
+        razorpay_rest.create_order = orig_create_order
+        razorpay_rest.captured_amount_inr = orig_captured
+
+
+def test_pending_purchase_survives_a_transient_verification_failure():
+    # If confirm_purchase can't even reach Razorpay to ask what was captured, that's exactly the
+    # transient case worth retrying later (a webhook redelivery, or the browser retrying) --
+    # clearing the pending record here would make that retry impossible.
+    from guardrail import razorpay_rest
+    setup()
+    orig_create_order = razorpay_rest.create_order
+    orig_captured = razorpay_rest.captured_amount_inr
+
+    def _raise(order_id):
+        raise ConnectionError("simulated network failure")
+
+    razorpay_rest.create_order = lambda amount_inr, receipt: {"id": "order_pending_test_3"}
+    razorpay_rest.captured_amount_inr = _raise
+    try:
+        token = guardrail.get_mandate_token("m_default")
+        guardrail.initiate_purchase(token, "p001", 500, requesting_customer_id="c777")
+
+        result = guardrail.confirm_purchase("m_default", "p001", 500, "order_pending_test_3", requesting_customer_id="c777")
+        assert result["status"] == "failed_verification"
+        assert guardrail.get_pending_purchase("order_pending_test_3") is not None  # still there, retryable
+    finally:
+        razorpay_rest.create_order = orig_create_order
+        razorpay_rest.captured_amount_inr = orig_captured
+
+
 if __name__ == "__main__":
     test_clean_purchase_success()
     test_exceeds_mandate_blocked_before_razorpay()

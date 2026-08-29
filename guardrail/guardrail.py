@@ -23,6 +23,7 @@ from guardrail import razorpay_rest
 SEED_MANDATES_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "mandates.json")
 MANDATE_STORE_PATH = os.path.join(os.path.dirname(__file__), "mandates.json")
 LEDGER_PATH = os.path.join(os.path.dirname(__file__), "ledger.json")
+PENDING_PURCHASES_PATH = os.path.join(os.path.dirname(__file__), "pending_purchases.json")
 _LOCK_PATH = MANDATE_STORE_PATH + ".lock"
 _LOCK_ACQUIRE_TIMEOUT_SECONDS = 5
 _LOCK_STALE_SECONDS = 10  # a lock file older than this is assumed abandoned by a crashed
@@ -51,11 +52,15 @@ def use_isolated_store(mandate_path: str, ledger_path: str):
     real during this project's own development (an AI buyer's pending real-Checkout purchase was
     wiped by re-running the guardrail batch). Every module-level function reads MANDATE_STORE_PATH
     /LEDGER_PATH by name at call time, so reassigning these globals here redirects all of them;
-    only _LOCK_PATH is a derived constant computed at import time, so it's reassigned explicitly."""
-    global MANDATE_STORE_PATH, LEDGER_PATH, _LOCK_PATH
+    only _LOCK_PATH is a derived constant computed at import time, so it's reassigned explicitly.
+    PENDING_PURCHASES_PATH is likewise redirected (derived from mandate_path's directory) -- the
+    real one is what the payment webhook handler reads to independently confirm a payment, and a
+    batch/test run's fake pending records have no business showing up there."""
+    global MANDATE_STORE_PATH, LEDGER_PATH, _LOCK_PATH, PENDING_PURCHASES_PATH
     MANDATE_STORE_PATH = mandate_path
     LEDGER_PATH = ledger_path
     _LOCK_PATH = mandate_path + ".lock"
+    PENDING_PURCHASES_PATH = os.path.join(os.path.dirname(mandate_path), "_isolated_pending_purchases.json")
 
 
 def use_real_store():
@@ -218,6 +223,33 @@ def _mandate_state_from_data(data: dict) -> dict:
     }
 
 
+def renew_mandate(mandate_id: str, new_expires_at: float) -> dict | None:
+    """Resets a mandate's spend counter to 0 and moves its expiry to new_expires_at -- called
+    when a real, bank-authorized recurring top-up (a Razorpay Subscription charge via UPI
+    AutoPay/eMandate, see subscriptions/allowance_subscription.py) confirms the customer's
+    allowance for a new billing period. max_amount_inr itself is untouched: a refresh doesn't
+    grow the ceiling, it makes the existing ceiling available again for the new period, exactly
+    like a real recurring allowance rather than an ever-growing balance. new_expires_at is the
+    real subscription cycle's own current_end from Razorpay, not a guessed offset, so the
+    mandate's window matches the bank-authorized billing cycle exactly. Returns the updated
+    state, or None if the mandate doesn't exist."""
+    with _mandate_store_lock():
+        store = _load_mandate_store()
+        token = store.get(mandate_id)
+        if token is None:
+            return None
+        data = mandate_mod.decode_and_verify(token)
+        if data is None:
+            return None
+        data["amount_spent_so_far_inr"] = 0
+        data["issued_at"] = time.time()
+        data["expires_at"] = new_expires_at
+        new_token = mandate_mod.encode_mandate(data)
+        store[mandate_id] = new_token
+        _save_mandate_store(store)
+    return _mandate_state_from_data(data)
+
+
 def get_mandate_state(mandate_id: str, requesting_customer_id: str = None) -> dict | None:
     """Returns the mandate's current plain-field state (no signed token), or None if unknown
     OR (when requesting_customer_id is given) not owned by that customer -- both cases return
@@ -292,6 +324,51 @@ def _load_ledger() -> list:
         return []
     with open(LEDGER_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _load_pending_purchases() -> dict:
+    if not os.path.exists(PENDING_PURCHASES_PATH):
+        return {}
+    with open(PENDING_PURCHASES_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_pending_purchases(data: dict) -> None:
+    tmp_path = f"{PENDING_PURCHASES_PATH}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp_path, PENDING_PURCHASES_PATH)
+
+
+def _record_pending_purchase(razorpay_order_id: str, mandate_id: str, product_id: str, amount_inr: int,
+                              requesting_customer_id: str) -> None:
+    """Recorded the moment initiate_purchase() creates a real order -- everything the payment
+    webhook handler (api/routes/webhooks.py) needs to independently confirm this payment later,
+    even if the browser that opened Checkout never comes back to call /api/purchase/confirm
+    itself (closed the tab right after paying, crashed, lost connectivity). Without this, a
+    payment that genuinely succeeded could go permanently unrecorded in Guardrail's ledger."""
+    with _mandate_store_lock():  # same lock as ledger/spend -- all guardrail state serialized through one lock
+        data = _load_pending_purchases()
+        data[razorpay_order_id] = {
+            "mandate_id": mandate_id, "product_id": product_id, "amount_inr": amount_inr,
+            "requesting_customer_id": requesting_customer_id,
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+        }
+        _save_pending_purchases(data)
+
+
+def get_pending_purchase(razorpay_order_id: str) -> dict | None:
+    """None if no such order was ever initiated through this Guardrail (or it's already been
+    cleared after confirmation) -- the webhook handler treats that as nothing to reconcile."""
+    return _load_pending_purchases().get(razorpay_order_id)
+
+
+def _clear_pending_purchase(razorpay_order_id: str) -> None:
+    with _mandate_store_lock():
+        data = _load_pending_purchases()
+        if razorpay_order_id in data:
+            del data[razorpay_order_id]
+            _save_pending_purchases(data)
 
 
 def _ledger_entry_for_successful_order(razorpay_order_id: str) -> dict | None:
@@ -525,15 +602,23 @@ def initiate_purchase(signed_mandate_token: str, product_id: str, amount_inr: in
         return result
 
     order = razorpay_rest.create_order(amount_inr, receipt=f"guardrail_{product_id}_{int(time.time())}")
+    # Recorded before returning to the caller -- if the payment webhook arrives before the
+    # browser ever calls /api/purchase/confirm (or that call never arrives at all), this is
+    # what lets the webhook handler independently confirm the same purchase with the same
+    # mandate/product/customer context, not just a bare order_id.
+    _record_pending_purchase(order["id"], mandate_id, product_id, amount_inr, requesting_customer_id)
+    checkout = {
+        "razorpay_order_id": order["id"],
+        "razorpay_key_id": razorpay_rest.RAZORPAY_KEY_ID,
+        "amount_inr": amount_inr,
+        "product_id": product_id,
+        "mandate_id": mandate_id,
+    }
+    if razorpay_customer_id:
+        checkout["razorpay_customer_id"] = razorpay_customer_id
     result = {
         "status": "checkout_required",
-        "checkout": {
-            "razorpay_order_id": order["id"],
-            "razorpay_key_id": razorpay_rest.RAZORPAY_KEY_ID,
-            "amount_inr": amount_inr,
-            "product_id": product_id,
-            "mandate_id": mandate_id,
-        },
+        "checkout": checkout,
         "reason": "Mandate allows this purchase. Complete payment via Razorpay Checkout to proceed.",
     }
     log_event("guardrail", "purchase_forwarded",
@@ -599,6 +684,7 @@ def confirm_purchase(mandate_id: str, product_id: str, amount_inr: int, razorpay
         log_event("guardrail", "verification",
                   {"razorpay_order_id": razorpay_order_id, "requesting_customer_id": requesting_customer_id},
                   result, "ok")
+        _clear_pending_purchase(razorpay_order_id)
         return result
 
     try:
@@ -652,6 +738,7 @@ def confirm_purchase(mandate_id: str, product_id: str, amount_inr: int, razorpay
             log_event("guardrail", "verification",
                       {"razorpay_order_id": razorpay_order_id, "requesting_customer_id": requesting_customer_id},
                       result, "ok")
+            _clear_pending_purchase(razorpay_order_id)
             return result
 
         if reserve["allowed"]:
@@ -662,6 +749,7 @@ def confirm_purchase(mandate_id: str, product_id: str, amount_inr: int, razorpay
             log_event("guardrail", "verification",
                       {"razorpay_order_id": razorpay_order_id, "requesting_customer_id": requesting_customer_id},
                       result, "ok")
+            _clear_pending_purchase(razorpay_order_id)
             return result
 
         # Reserve failed (e.g. a concurrent purchase against the same mandate landed first) --
@@ -696,5 +784,11 @@ def confirm_purchase(mandate_id: str, product_id: str, amount_inr: int, razorpay
         "requesting_customer_id": requesting_customer_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
+    # Both branches landing here (refunded/blocked-after-capture, and a stable amount-mismatch
+    # failed_verification) are final, non-transient determinations against a real, already-known
+    # captured amount -- retrying confirm_purchase again would reach the exact same outcome, so
+    # there's nothing to preserve the pending record for. (The earlier "could not verify with
+    # Razorpay" exception branch deliberately does NOT clear it -- that one's worth retrying.)
+    _clear_pending_purchase(razorpay_order_id)
 
     return result

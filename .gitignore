@@ -7,6 +7,7 @@ audit/audit_log.pre_source_tagging_archive.jsonl
 audit/support_requests.jsonl
 guardrail/mandates.json
 guardrail/ledger.json
+guardrail/pending_purchases.json
 batch_tests/results/
 checkout_demo.html
 razorpay-mcp-server/
