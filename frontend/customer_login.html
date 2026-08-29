@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Log In &mdash; TechBazaar</title>
+<link rel="stylesheet" href="styles.css?v=16">
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="mark">🛒</div> TechBazaar</div>
+  <div class="navlinks"><a href="index.html">&larr; Back to store</a></div>
+</header>
+
+<main class="login-main">
+  <div class="login-card">
+    <div class="login-tabs">
+      <button type="button" class="login-tab on" id="tabLogin">Log In</button>
+      <button type="button" class="login-tab" id="tabSignup">Sign Up</button>
+    </div>
+
+    <form id="loginForm">
+      <h2>Welcome back</h2>
+      <p>Log in to let the AI agent shop for you.</p>
+      <input id="loginUsername" type="text" placeholder="Username" autocomplete="username" required>
+      <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" required>
+      <button type="submit">Log In</button>
+      <span class="login-error" id="loginError"></span>
+    </form>
+
+    <form id="signupForm" hidden>
+      <h2>Create your account</h2>
+      <p>Takes a few seconds &mdash; you'll get a first-time-customer discount eligibility too.</p>
+      <input id="signupName" type="text" placeholder="Full name" required maxlength="80">
+      <input id="signupEmail" type="email" placeholder="Email address" autocomplete="email" required maxlength="120">
+      <input id="signupUsername" type="text" placeholder="Choose a username" autocomplete="username" required minlength="3" maxlength="40">
+      <input id="signupPassword" type="password" placeholder="Choose a password (6+ chars)" autocomplete="new-password" required minlength="6">
+      <button type="submit">Sign Up</button>
+      <span class="login-error" id="signupError"></span>
+    </form>
+  </div>
+</main>
+
+<script src="app.js?v=22"></script>
+<script>initCustomerLogin();</script>
+</body>
+</html>

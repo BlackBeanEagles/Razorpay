@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TechBazaar — with Guardrail AI Shopping Agent</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="styles.css?v=16">
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="mark">🛒</div> TechBazaar</div>
+  <div class="searchbar"><span class="ic">🔍</span><input id="searchInput" placeholder="Search products..." autocomplete="off"></div>
+  <div class="navlinks"><a href="index.html">Store</a></div>
+  <div class="header-right">
+    <div id="customerAuthSlot"></div>
+    <div class="icon-wrap">
+      <button type="button" class="icon-btn icon-btn-clickable" id="wishlistBtn" aria-label="Wishlist">♡<span class="badge" id="wishlistBadge" hidden>0</span></button>
+      <div class="cart-panel" id="wishlistPanel" hidden>
+        <div class="cart-panel-head">Your Wishlist</div>
+        <div class="cart-items" id="wishlistItems"></div>
+      </div>
+    </div>
+    <div class="icon-wrap">
+      <button type="button" class="icon-btn icon-btn-clickable" id="cartBtn" aria-label="Cart">🛒<span class="badge" id="cartBadge" hidden>0</span></button>
+      <div class="cart-panel" id="cartPanel" hidden>
+        <div class="cart-panel-head">Your Cart</div>
+        <div class="cart-items" id="cartItems"></div>
+        <div class="cart-panel-foot">
+          <div class="cart-total"><span>Total</span><strong id="cartTotal">₹0</strong></div>
+          <button type="button" class="btn-primary cart-checkout-btn" id="cartCheckoutBtn">Checkout with AI Agent</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="store-shell">
+  <div class="storefront" id="storefront">
+
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">⚡ Powered by Razorpay &middot; Test Mode</div>
+        <h1>Shop Smarter with Your <span>AI Agent</span></h1>
+        <p>Browse normally, or let the Guardrail agent shop for you — it searches, checks the price is fair, and buys, all within a spending limit it can't exceed.</p>
+        <div class="hero-actions">
+          <button class="btn-primary" type="button" onclick="document.getElementById('productGrid').scrollIntoView({behavior:'smooth'})">Shop Now &rarr;</button>
+        </div>
+        <div class="hero-stats">
+          <span>🛡️ Mandate-gated spend</span>
+          <span>✅ Verified via Razorpay</span>
+          <span>📋 Fully audited</span>
+        </div>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="hero-blob"></div>
+        <div class="hero-card hc1">🎧<div>Wireless Earbuds</div></div>
+        <div class="hero-card hc2">⌚<div>Smartwatch Pro</div></div>
+        <div class="hero-card hc3">🔌<div>Fast Charger</div></div>
+      </div>
+    </section>
+
+    <section class="feature-strip">
+      <div class="feature"><span class="ficon">🚚</span><div><div class="ftitle">Fast Test-Mode Checkout</div><div class="fsub">Real Razorpay orders, zero real money</div></div></div>
+      <div class="feature"><span class="ficon">🛡️</span><div><div class="ftitle">Spending Mandates</div><div class="fsub">The agent can't overspend your limit</div></div></div>
+      <div class="feature"><span class="ficon">🔎</span><div><div class="ftitle">Fairness Checked</div><div class="fsub">Prices verified against past offers</div></div></div>
+      <div class="feature"><span class="ficon">📊</span><div><div class="ftitle">Fully Audited</div><div class="fsub">Every step logged, nothing hidden</div></div></div>
+    </section>
+
+    <h2 class="section-title">Shop by Category</h2>
+    <div class="cat-showcase" id="catShowcase"></div>
+
+    <div class="section-head-row">
+      <h2 class="section-title">Our Products</h2>
+      <div class="cat-row" id="catFilterRow">
+        <button type="button" class="cat-chip on" data-cat="all">All</button>
+        <button type="button" class="cat-chip" data-cat="audio">Audio</button>
+        <button type="button" class="cat-chip" data-cat="wearables">Wearables</button>
+        <button type="button" class="cat-chip" data-cat="accessories">Accessories</button>
+        <button type="button" class="cat-chip" data-cat="computer-accessories">Computer</button>
+      </div>
+    </div>
+
+    <div class="grid" id="productGrid"></div>
+  </div>
+
+  <div class="agent-panel" id="agentPanel">
+    <div class="agent-head">
+      <div class="agent-head-top">
+        <div class="agent-avatar">🤖</div>
+        <div>
+          <div class="title">Guardrail Agent</div>
+          <div class="subtitle"><span class="live-dot"></span>Online &middot; ready to shop or list</div>
+        </div>
+        <button type="button" class="agent-close" id="agentCloseBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="mandate-box" id="mandateBox">
+        <div class="label">Active mandate on TechBazaar</div>
+        <div class="amount">₹0 <span style="font-size:11px;color:var(--text-faint);font-weight:400;">/ ₹0 used</span></div>
+        <div class="bar"><div class="bar-fill" style="width:0%"></div></div>
+        <div class="label expiry">&nbsp;</div>
+        <div class="limit-row">
+          <input id="setLimitInput" type="number" min="1" placeholder="New limit (₹)">
+          <button id="setLimitBtn" type="button">Set</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="agent-log" id="agentLog">
+      <div class="msg agent">Tell me what to buy — I'll find it on this store, check the price is fair, and buy it within your mandate limit. Ask "what's available?" for a quick overview, or say "Add product ..." to list your own.</div>
+    </div>
+
+    <div class="agent-composer">
+      <div class="sugg-row">
+        <button type="button" class="sugg" data-prompt="What things are available?">💬 What's available?</button>
+        <button type="button" class="sugg" data-prompt="Get me wireless earbuds under 2000 rupees, prefer good ratings">🎧 Earbuds under ₹2000</button>
+        <button type="button" class="sugg" data-prompt="Get me the fitness smartwatch with GPS">⌚ GPS smartwatch (over limit)</button>
+        <button type="button" class="sugg" data-prompt="Get me a power bank, at least 20000mAh">🔋 Power bank (out of stock)</button>
+        <button type="button" class="sugg" data-prompt="Add product Wireless Charging Stand, category accessories, price 899, stock 15, rating 4.3, description Fast wireless charging stand">🏷️ List a product</button>
+      </div>
+      <div class="composer-row">
+        <input id="chatInput" type="text" placeholder="Message the agent...">
+        <button type="button" id="chatSendBtn" class="composer-send" aria-label="Send">&#10148;</button>
+      </div>
+    </div>
+  </div>
+
+  <button type="button" class="agent-fab" id="agentFab" aria-label="Open AI Shopping Agent">🤖</button>
+</div>
+
+<div class="modal-overlay" id="supportModalOverlay" hidden>
+  <div class="modal-card">
+    <h3>Contact support</h3>
+    <p>Anything at all &mdash; a question, a problem with an order, feedback. We'll follow up by email.</p>
+    <form id="supportForm">
+      <textarea id="supportMessage" placeholder="What's going on?" required maxlength="1000" rows="4"></textarea>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" id="supportModalCancel">Cancel</button>
+        <button type="submit" class="btn-primary" id="supportModalSubmit">Send</button>
+      </div>
+      <div id="supportModalStatus" class="modal-status"></div>
+    </form>
+  </div>
+</div>
+
+<script src="app.js?v=22"></script>
+<script>initStorefront();</script>
+</body>
+</html>

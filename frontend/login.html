@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Admin Login &mdash; TechBazaar</title>
+<link rel="stylesheet" href="styles.css?v=16">
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="mark">🛒</div> TechBazaar</div>
+  <div class="navlinks"><a href="index.html">&larr; Back to store</a></div>
+</header>
+
+<main class="login-main">
+  <form class="login-card" id="loginForm">
+    <h2>Admin Login</h2>
+    <p>Merchant / audit dashboard access only.</p>
+    <input id="loginUsername" type="text" placeholder="Username" autocomplete="username" required>
+    <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button type="submit">Log In</button>
+    <span class="login-error" id="loginError"></span>
+  </form>
+</main>
+
+<script src="app.js?v=22"></script>
+<script>initLogin();</script>
+</body>
+</html>

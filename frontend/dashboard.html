@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Merchant / Audit Dashboard</title>
+<link rel="stylesheet" href="styles.css?v=16">
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="mark">🛒</div> TechBazaar <span class="admin-badge">Admin</span></div>
+  <div class="navlinks"><a href="index.html">&larr; Back to store</a></div>
+  <div class="header-right">
+    <span id="adminWhoami" style="font-size:12.5px;color:var(--text-dim);"></span>
+    <button class="btn-ghost" type="button" id="logoutBtn" style="padding:7px 14px;font-size:12.5px;">Log Out</button>
+  </div>
+</header>
+
+<main class="dashboard">
+  <h2 style="margin-top:0">Live activity &mdash; Shelf, Parity, Guardrail</h2>
+
+  <div class="panel">
+    <div class="panel-head">Real traffic only <span style="font-weight:400;color:var(--text-dim);">-- updates as real customers/AI buyers search, get priced, and buy. Never test or batch runs. Click a row to see its failures.</span></div>
+    <div id="liveStatsBody"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">Connected AI agents <span id="aiAgentSummary" style="font-weight:400;color:var(--text-dim);"></span></div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Agent</th><th>Fairness checks</th><th>Latest money action</th><th>Last seen</th></tr></thead>
+        <tbody id="aiAgentTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">Reconciliation exceptions <span id="reconSummary" style="font-weight:400;color:var(--text-dim);"></span></div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Order</th><th>Type</th><th>Reason</th></tr></thead>
+        <tbody id="reconTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">Ask about the books</div>
+    <div class="agent-log" id="qaLog" style="height:220px;">
+      <div class="msg agent">Ask me anything about the reconciliation batch -- "what's our match rate", "what's wrong with ord_0052", "show me the live purchases", "which exceptions need manual review".</div>
+    </div>
+    <div class="agent-composer">
+      <div class="composer-row">
+        <input id="qaInput" type="text" placeholder="Ask about settlements...">
+        <button type="button" id="qaSendBtn" class="composer-send" aria-label="Send">&#10148;</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      Recent audit log <span id="auditFilterLabel" style="font-weight:400;color:var(--text-dim);"></span>
+      <button type="button" id="auditFilterClear" class="btn-ghost" style="display:none;margin-left:auto;padding:3px 10px;font-size:11px;">Clear filter</button>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Time</th><th>Component</th><th>Event</th><th>Outcome</th><th>Result</th></tr></thead>
+        <tbody id="auditTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">Support requests <span id="supportSummary" style="font-weight:400;color:var(--text-dim);"></span></div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Time</th><th>Customer</th><th>Feature</th><th>What they hit</th><th>Message</th><th>Status</th></tr></thead>
+        <tbody id="supportTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script src="app.js?v=22"></script>
+<script>initDashboard();</script>
+</body>
+</html>
