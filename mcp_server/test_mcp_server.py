@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from guardrail import guardrail
 from mcp_server.techbazaar_mcp_server import (
     register_ai_buyer, create_mandate, search_catalog, check_price_fairness, purchase, get_store_overview,
-    get_upsell_suggestions, CUSTOMER_PROFILES_PATH,
+    get_upsell_suggestions, negotiate_price, CUSTOMER_PROFILES_PATH,
 )
 
 # Isolated from the real guardrail/mandates.json and guardrail/ledger.json -- setup()'s
@@ -118,6 +118,14 @@ def test_upsell_suggestions_use_the_real_shared_engine():
     result = get_upsell_suggestions("p001", "ai_buyer_test")  # earbuds -> accessories
     assert len(result["suggestions"]) > 0
     assert all(s["category"] == "accessories" for s in result["suggestions"])
+
+
+def test_negotiate_price_uses_the_real_shared_negotiation_engine():
+    lowball = negotiate_price("p001", "ai_buyer_test", 1000, round_number=1)
+    assert lowball["verdict"] == "counter"
+    accepted = negotiate_price("p001", "ai_buyer_test", lowball["counter_price_inr"], round_number=2)
+    assert accepted["verdict"] == "accept"
+    assert accepted["agreed_price_inr"] == lowball["counter_price_inr"]
 
 
 if __name__ == "__main__":

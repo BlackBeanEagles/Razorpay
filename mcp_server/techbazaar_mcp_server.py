@@ -35,6 +35,7 @@ from shelf.shelf import search_catalog as _search_catalog
 from parity.parity import check_price_fairness as _check_price_fairness
 from guardrail import guardrail
 from growth.upsell import suggest_complementary as _suggest_complementary
+from negotiation.negotiation import propose_price as _propose_price
 from api.routes.catalog import catalog_overview
 from api.file_lock import file_lock
 
@@ -50,7 +51,12 @@ mcp = FastMCP(
         "and always check_price_fairness on the matched product before purchase -- a flagged "
         "price should not be bought. After a successful purchase, call get_upsell_suggestions "
         "on the product you bought and offer the buyer a relevant add-on if one exists and "
-        "still fits their mandate -- don't just stop at one item."
+        "still fits their mandate -- don't just stop at one item. "
+        "If you want to try for a lower price, call negotiate_price with your opening offer "
+        "instead of just buying at the listed price -- it will accept, counter with the lowest "
+        "price it can honestly justify, or reject after a few rounds. If it counters, you can "
+        "call it again with a new offer (e.g. its exact counter-price to accept the deal). Once "
+        "you get 'accept', purchase() at that agreed price, not the original listed price."
     ),
 )
 
@@ -133,6 +139,19 @@ def confirm_purchase(mandate_id: str, product_id: str, amount_inr: int, razorpay
     the caller's say-so that payment succeeded. Idempotent: confirming the same
     razorpay_order_id twice returns the original result rather than double-counting spend."""
     return guardrail.confirm_purchase(mandate_id, product_id, amount_inr, razorpay_order_id, requesting_customer_id=ai_buyer_id)
+
+
+@mcp.tool()
+def negotiate_price(product_id: str, ai_buyer_id: str, offered_price_inr: float, round_number: int = 1) -> dict:
+    """Propose a price for a product instead of buying at the listed price. Returns one of:
+    {"verdict": "accept", "agreed_price_inr": ...} -- proceed straight to purchase() at this price.
+    {"verdict": "counter", "counter_price_inr": ...} -- call negotiate_price again with a new
+      offer (round_number + 1) if you want to keep going, up to a few rounds.
+    {"verdict": "reject", ...} -- no agreement; buy at the original listed price or walk away.
+    The counter-price is never arbitrary -- it's the real, lowest price Parity's own fairness
+    engine would still call fair for this product and this ai_buyer_id's actual discount
+    eligibility, so the merchant never concedes past its own pricing rules just to close a deal."""
+    return _propose_price(product_id, offered_price_inr, ai_buyer_id, round_number)
 
 
 @mcp.tool()

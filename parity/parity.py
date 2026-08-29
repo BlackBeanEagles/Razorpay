@@ -88,7 +88,17 @@ def _recency_filtered_prices(entries: list) -> list:
     return [e["offered_price_inr"] for e in (recent or timestamped)]
 
 
-def check_price_fairness(product_id: str, customer_id: str, offered_price_inr: int) -> dict:
+def get_baseline_and_factor(product_id: str, customer_id: str) -> dict | None:
+    """The comparison baseline and this customer's best applicable discount factor for a
+    product -- the exact computation check_price_fairness itself uses, extracted so any other
+    caller that needs a *principled* fair-price boundary (negotiation/negotiation.py's
+    counter-offer floor, specifically) computes it from this single source of truth rather than
+    re-deriving its own version that could silently drift from what fairness-checking actually
+    enforces. Returns None if there's no pricing history AND no catalog listing for this product
+    at all -- nothing to compare against, same case check_price_fairness reports as "fair" for
+    lack of any baseline.
+
+    {"baseline": float, "using_catalog_fallback": bool, "factor": str|None, "factor_cap": float}"""
     pricing_log = _load(PRICING_LOG_PATH)
     profiles = _load(CUSTOMER_PROFILES_PATH)
 
@@ -105,24 +115,34 @@ def check_price_fairness(product_id: str, customer_id: str, offered_price_inr: i
         catalog = _load(CATALOG_PATH)
         catalog_entry = next((p for p in catalog if p["product_id"] == product_id), None)
         if catalog_entry is None:
-            result = {
-                "verdict": "fair",
-                "reason": "No pricing history or catalog listing exists for this product; nothing to compare against.",
-                "comparison_baseline": None,
-                "explained_by": None,
-            }
-            log_event("parity", "fairness_check",
-                       {"product_id": product_id, "customer_id": customer_id, "offered_price_inr": offered_price_inr},
-                       result, "ok")
-            return result
+            return None
         baseline = catalog_entry["price_inr"]
         using_catalog_fallback = True
 
+    profile = _customer_profile(customer_id, profiles)
+    factor, factor_cap = _best_factor_for_deviation(profile)
+    return {"baseline": baseline, "using_catalog_fallback": using_catalog_fallback, "factor": factor, "factor_cap": factor_cap}
+
+
+def check_price_fairness(product_id: str, customer_id: str, offered_price_inr: int) -> dict:
+    info = get_baseline_and_factor(product_id, customer_id)
+    if info is None:
+        result = {
+            "verdict": "fair",
+            "reason": "No pricing history or catalog listing exists for this product; nothing to compare against.",
+            "comparison_baseline": None,
+            "explained_by": None,
+        }
+        log_event("parity", "fairness_check",
+                   {"product_id": product_id, "customer_id": customer_id, "offered_price_inr": offered_price_inr},
+                   result, "ok")
+        return result
+
+    baseline, using_catalog_fallback = info["baseline"], info["using_catalog_fallback"]
     deviation = (offered_price_inr - baseline) / baseline if baseline else 0
     baseline_label = "the product's listed catalog price" if using_catalog_fallback else f"the baseline median ({baseline})"
 
-    profile = _customer_profile(customer_id, profiles)
-    expected_factor, factor_cap = _best_factor_for_deviation(profile)
+    expected_factor, factor_cap = info["factor"], info["factor_cap"]
 
     if abs(deviation) <= DEVIATION_THRESHOLD:
         result = {
