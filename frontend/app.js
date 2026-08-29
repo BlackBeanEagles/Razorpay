@@ -773,6 +773,11 @@ function addCheckoutCard(checkout, productId) {
       name: "TechBazaar",
       description: "Guardrail-verified purchase (test mode)",
       theme: { color: "#2874f0" },
+      // razorpay_customer_id (real, from Razorpay's own Customers API -- see
+      // api.customer_auth.get_or_create_razorpay_customer_id) lets Checkout recognize a
+      // returning customer and offer their saved card/UPI method instead of asking again.
+      // The actual card data is tokenized and held by Razorpay -- never sent to or seen by us.
+      ...(checkout.razorpay_customer_id ? { customer_id: checkout.razorpay_customer_id } : {}),
       handler: async () => {
         // Razorpay confirms the human completed Checkout -- now ask Guardrail to
         // independently verify with Razorpay itself before ever calling it a success.
