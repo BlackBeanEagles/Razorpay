@@ -935,19 +935,20 @@ async function initDashboard() {
     window.location.href = "login.html";
   });
 
-  const [batchResRaw, auditResRaw, aiAgentsResRaw, liveStatsResRaw, supportResRaw] = await Promise.all([
+  const [batchResRaw, auditResRaw, aiAgentsResRaw, liveStatsResRaw, supportResRaw, liveCheckResRaw] = await Promise.all([
     fetch(`${API_BASE}/api/batch-results`),
     fetch(`${API_BASE}/api/audit-log?limit=300`),
     fetch(`${API_BASE}/api/ai-agents`),
     fetch(`${API_BASE}/api/live-stats`),
     fetch(`${API_BASE}/api/support-requests`),
+    fetch(`${API_BASE}/api/reconciliation/live-check`),
   ]);
-  if ([batchResRaw, auditResRaw, aiAgentsResRaw, liveStatsResRaw, supportResRaw].some((r) => r.status === 401)) {
+  if ([batchResRaw, auditResRaw, aiAgentsResRaw, liveStatsResRaw, supportResRaw, liveCheckResRaw].some((r) => r.status === 401)) {
     window.location.href = "login.html";
     return;
   }
-  const [batchRes, auditRes, aiAgentsRes, liveStats, supportRes] = await Promise.all([
-    batchResRaw.json(), auditResRaw.json(), aiAgentsResRaw.json(), liveStatsResRaw.json(), supportResRaw.json(),
+  const [batchRes, auditRes, aiAgentsRes, liveStats, supportRes, liveCheckRes] = await Promise.all([
+    batchResRaw.json(), auditResRaw.json(), aiAgentsResRaw.json(), liveStatsResRaw.json(), supportResRaw.json(), liveCheckResRaw.json(),
   ]);
 
   // batchRes.reconciliation (rc) is still real, per-record data (which live purchases vs. the
@@ -1009,6 +1010,62 @@ async function initDashboard() {
   } else {
     reconSummaryEl.textContent = "-- run batch_tests/run_reconciliation_batch.py";
     reconBody.innerHTML = `<tr><td colspan="3">No reconciliation batch has been run yet.</td></tr>`;
+  }
+
+  renderLiveCheck(liveCheckRes);
+  function renderLiveCheck(lc) {
+    const summaryEl = document.getElementById("liveCheckSummary");
+    const body = document.getElementById("liveCheckTableBody");
+    if (lc.unavailable_reason) {
+      summaryEl.textContent = "-- unavailable";
+      body.innerHTML = `<tr><td colspan="4">${escapeHtml(lc.unavailable_reason)}</td></tr>`;
+      return;
+    }
+    summaryEl.textContent = `-- ${lc.checked} real purchase(s) re-checked against Razorpay just now, ${lc.clean} clean, ${lc.exceptions.length} drifted`;
+    const typeToPill = { overcharge_drift: "flagged", undercharge_drift: "failed", refund_not_reflected: "failed" };
+    body.innerHTML = lc.exceptions.length
+      ? lc.exceptions.map((e) => `
+        <tr>
+          <td>${escapeHtml(e.order_id)}</td>
+          <td><span class="pill ${pillClass(typeToPill[e.type] || "")}">${escapeHtml(e.type.replace(/_/g, " "))}</span></td>
+          <td>${escapeHtml(e.reason)}</td>
+          <td>${e.remediable
+            ? `<button type="button" class="btn-ghost remediate-btn" data-order-id="${escapeHtml(e.order_id)}" data-amount="${e.razorpay_captured_amount_inr - e.expected_amount_inr}" style="padding:3px 9px;font-size:11px;">Refund overcharge</button>`
+            : ""}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="4">Nothing has drifted since capture -- Razorpay's own records agree with every real purchase on file.</td></tr>`;
+    body.querySelectorAll(".remediate-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const orderId = btn.dataset.orderId;
+        const amount = Number(btn.dataset.amount);
+        if (!window.confirm(`Issue a real (test-mode) refund of ${inr(amount)} against order ${orderId}? This actually calls Razorpay and cannot be undone from here.`)) {
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = "...";
+        try {
+          const res = await fetch(`${API_BASE}/api/reconciliation/remediate-overcharge`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ order_id: orderId }),
+          });
+          const result = await res.json();
+          if (res.ok && result.status === "refunded") {
+            btn.closest("tr").querySelector("td:last-child").innerHTML = `<span class="pill ok">refunded ${inr(result.refund_amount_inr)}</span>`;
+          } else if (res.ok && result.status === "no_action_needed") {
+            btn.closest("tr").querySelector("td:last-child").innerHTML = `<span class="pill ok">already resolved</span>`;
+          } else {
+            btn.disabled = false;
+            btn.textContent = "Refund overcharge";
+            window.alert(result.detail || "Could not issue the refund.");
+          }
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = "Refund overcharge";
+          window.alert("Could not reach the server.");
+        }
+      });
+    });
   }
 
   function renderAuditTable(entries, filterLabel) {

@@ -15,6 +15,7 @@ import requests
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from reconciliation.reconciliation import reconcile_from_disk
+from reconciliation.live_verification import check_live_drift
 from agent.groq_client import chat_completion, LLM_AVAILABLE
 
 MAX_TOOL_ITERATIONS = 4
@@ -35,6 +36,13 @@ Tools:
   type (amount_mismatch, missing_settlement, duplicate_settlement, status_exception,
   orphan_settlement) and/or source (live_ledger, synthetic_seed). Call this for "which orders
   have X problem" / "show me the live ones" / "what needs manual review" questions.
+- get_live_drift_check -- independently re-verifies every real captured purchase against
+  Razorpay's OWN current record, fetched fresh right now (not this app's own saved ledger data).
+  Catches things the other tools can't, like a refund issued by hand straight in the Razorpay
+  Dashboard that this app was never told about. Call this for "has anything changed since we
+  charged it" / "does Razorpay agree with our records" / "any overcharges" questions. You cannot
+  issue a refund yourself -- if it finds a remediable overcharge, tell the user and point them to
+  the "Refund overcharge" button on the live-check panel; never claim you fixed it.
 
 Be concise -- 2-4 sentences, plain language a non-engineer finance person would want, not a raw
 dump of the JSON. If a question needs an order_id or filter you weren't given and can't
@@ -80,6 +88,14 @@ TOOLS_SCHEMA = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_live_drift_check",
+            "description": "Independently re-verifies every real captured purchase against Razorpay's own current record, fetched fresh right now. Catches drift this app's own saved records can't see, like a manual refund issued straight in the Razorpay Dashboard.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
 ]
 
 
@@ -114,6 +130,7 @@ _TOOL_FUNCTIONS = {
     "get_batch_summary": lambda args: get_batch_summary(),
     "get_order_detail": lambda args: get_order_detail(args["order_id"]),
     "list_exceptions": lambda args: list_exceptions(args.get("exception_type"), args.get("source")),
+    "get_live_drift_check": lambda args: check_live_drift(),
 }
 
 
