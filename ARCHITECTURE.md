@@ -37,6 +37,21 @@ flowchart TB
     Razorpay --> Ledger["guardrail/ledger.json\nreal transaction ledger"]
     Ledger --> Reconciliation["Reconciliation engine\nmerges live ledger + synthetic proof batch"]
     Reconciliation --> Dashboard
+    Ledger --> LiveCheck["Live verification\nre-fetches each order's real\ncurrent state from Razorpay"]
+    LiveCheck -->|fetch_order_payments| Razorpay
+    LiveCheck -->|"admin-confirmed refund\n(overcharge_drift only)"| Razorpay
+    LiveCheck --> Dashboard
+
+    Razorpay -->|payment.dispute.created webhook| Disputes["Dispute response\ndrafts evidence from\nGuardrail + Parity records"]
+    Ledger --> Disputes
+    Disputes -->|"contest draft (never auto-submitted)"| Razorpay
+    Disputes -->|"admin-confirmed submit / accept"| Razorpay
+    Disputes --> Dashboard
+
+    Human -->|"set up monthly refresh"| Allowance["Allowance subscription\nreal Plan + Subscription\nvia UPI AutoPay/eMandate"]
+    Allowance -->|"POST /v1/plans, /v1/subscriptions"| Razorpay
+    Razorpay -->|"subscription.charged webhook\n(bank-confirmed)"| Allowance
+    Allowance -->|renew_mandate: reset spend, move expiry| Guardrail
 ```
 
 The single most important property of this design: **every entry point — the storefront's own chat, and an external AI buyer over MCP — calls the exact same `search_catalog` / `check_price_fairness` / `execute_purchase` functions.** There is no separate, weaker code path for external agents. An AI buyer gets no shortcut around mandate enforcement, fairness checks, or verification.
@@ -88,11 +103,19 @@ Mandate ownership is enforced too: `get_mandate_token(mandate_id, requesting_cus
 
 ## MCP server — the external AI buyer surface
 
-`mcp_server/techbazaar_mcp_server.py` is a real [MCP](https://modelcontextprotocol.io) server (`FastMCP`, stdio transport) exposing eight tools: `register_ai_buyer`, `create_mandate`, `search_catalog`, `check_price_fairness`, `purchase`, `confirm_purchase`, `get_upsell_suggestions`, `get_store_overview`.
+`mcp_server/techbazaar_mcp_server.py` is a real [MCP](https://modelcontextprotocol.io) server (`FastMCP`, stdio transport) exposing nine tools: `register_ai_buyer`, `create_mandate`, `search_catalog`, `check_price_fairness`, `negotiate_price`, `purchase`, `confirm_purchase`, `get_upsell_suggestions`, `get_store_overview`.
 
 - An AI buyer gets its own identity namespace (`ai_buyer_NNN`, never overlapping with human `cNNN` customer IDs) — so the audit trail can always tell an autonomous purchase from a human one at a glance.
 - `create_mandate` sets a bounded, expiring spend limit *before* shopping — `purchase()` enforces it through the exact same race-free Guardrail path human purchases use.
 - Verified as a genuine, spec-compliant server (not just "the functions work if you import them directly") by `mcp_server/verify_real_mcp_connection.py`: spawns the server as a real subprocess and drives it with an actual `mcp.ClientSession` over `tools/list`/`tools/call` JSON-RPC.
+
+## Negotiation — real agent-to-agent price haggling
+
+`negotiation/negotiation.py`'s `propose_price(product_id, offered_price_inr, customer_id, round_number)` is deliberately open territory: checked against Razorpay's own Agentic Payments, Agent Studio, and Agentic Platform docs before building it, and none of them cover an agent *negotiating* a price — only an agent triggering an already-approved payment. This is genuine agent-to-agent commerce: two real decision-makers (an AI buyer, and the merchant's own pricing agent standing in here) reach a real, executable agreement.
+
+The counter-offer is never invented — it's exactly the lowest price `parity.get_baseline_and_factor()` (the same baseline/discount-factor computation `check_price_fairness` itself uses, extracted into one shared function so the two can never silently drift apart) would still call fair for that product and that customer's real discount eligibility. The merchant agent never concedes past its own fairness rules to close a deal, and never haggles forever (`MAX_ROUNDS = 3`, the same "gated" principle as everything else here). A real off-by-rounding bug was found and fixed during testing: rounding the floor price down (`round()`) quoted a counter slightly below the true fairness floor, so a buyer accepting the exact quoted number got countered again for the same price, forever — fixed with `math.ceil()` so the quoted counter is always genuinely acceptable.
+
+Exposed identically to both the MCP server (`negotiate_price`, for an external AI buyer) and the storefront's own LLM agent (`agent/llm_agent.py`, for a human asking to haggle) — same underlying function, same fairness bounds, no separate "human negotiation" ruleset that could drift from the agent one. Verified live over the real MCP protocol (`mcp_server/_demo_negotiate.py`): a real lowball offer, a real principled counter, acceptance, and a real Razorpay checkout at the negotiated price rather than the listed one.
 
 ## Reconciliation — closing the finance-ops loop
 
@@ -104,6 +127,37 @@ Two sources are merged, always tagged:
 - `live_ledger` — every real transaction in `guardrail/ledger.json` (including AI-buyer purchases over MCP), converted to the same order/settlement shape via `load_live_orders_and_settlements()`.
 
 Classification accuracy is reported **only against the synthetic subset** (the only one with a scripted correct answer) — folding live data into that number would overstate what's actually been verified. `reconciliation/settlement_qa.py` is a second Groq tool-calling agent, scoped to three read-only tools (`get_batch_summary`, `get_order_detail`, `list_exceptions`) over this same real data — it cannot search the catalog, check fairness, or move money.
+
+## Live verification — reconciling against Razorpay's own current record, not our snapshot of it
+
+`reconciliation/reconciliation.py`'s batch above answers "does our internal ledger agree with our own settlement records" — a genuinely useful check, but a closed loop: both sides are files this app already wrote. `reconciliation/live_verification.py` closes a different gap, one the ledger-vs-ledger check structurally cannot see: for every real captured purchase, it calls `guardrail/razorpay_rest.py` (the same real REST client the live checkout flow itself uses, not the Docker-based MCP client, which is deliberately kept out of the live request path) to ask Razorpay, right now, what that order's payment actually looks like today — not what our ledger recorded the moment `confirm_purchase()` ran.
+
+That distinction matters because a payment's state can change *after* we last looked — most concretely, a refund issued by hand straight in the Razorpay Dashboard, entirely bypassing this app, which the ledger would have no way to know about. `check_live_drift()` re-fetches and classifies every live order into:
+
+- **clean** — Razorpay's current record agrees with what we expected.
+- **`overcharge_drift`** — Razorpay shows *more* captured than this order was ever meant to charge. Unambiguous: the only correct fix is a refund of the difference.
+- **`undercharge_drift`** — Razorpay shows *less* captured than expected. Flagged for manual review only — could be a legitimate refund, a dispute, a chargeback; this system has no way to know why, so it never guesses.
+- **`refund_not_reflected`** — the ledger already believes an order was refunded, but Razorpay's current record disagrees.
+
+Only `overcharge_drift` is remediable, and even then never blindly: `remediate_overcharge()` re-verifies fresh against Razorpay *immediately before* issuing the refund rather than trusting a result computed even a few seconds earlier — so a refund already issued by someone else in the meantime (or a second admin double-clicking the same button) can't double-refund the same order. It's exposed on the dashboard as a "Refund overcharge" button behind a native confirm dialog, and to Settlement Q&A as a read-only tool (`get_live_drift_check`) — the LLM agent can report a remediable exception but is never wired to trigger the refund itself; that stays a deliberate, confirmed human click. Proven by 16 tests in `reconciliation/test_live_verification.py` covering every drift type, partial vs. full refunds (Razorpay only flips a payment's own `status` to `"refunded"` on a *full* refund — a partial refund leaves `status: "captured"` with a nonzero `amount_refunded`, which an earlier, naive `status == "captured"` filter would have silently missed), and the remediation guardrails (re-verify-before-acting, refuse on an already-fixed order, refuse on an unknown order).
+
+## Bank-registered allowance top-ups — closing the "who enforces the mandate" gap
+
+Every mandate in this system, until now, was enforced by exactly one thing: Guardrail's own database check (`_validate_mandate_data`). That's real and race-free (see the concurrency section above), but it's still just this app's own server code -- a bug or a compromise there is the only thing standing between an AI agent and its spend cap. Razorpay has a real product for exactly this gap: UPI AutoPay / eMandate, a recurring authorization the customer's own bank or UPI app independently confirms, not something the merchant's server can quietly exceed.
+
+`subscriptions/allowance_subscription.py` uses this deliberately narrowly. Razorpay's Subscriptions API (`POST /v1/plans`, `POST /v1/subscriptions`) is genuinely self-serve test-mode REST -- confirmed the same way Disputes was, via "fork the Postman workspace with your test keys," unlike Route, Payouts, Magic Checkout, or Recurring Payments (all gated behind an on-demand approval request). But a Subscription is a fixed-amount, fixed-schedule recurring bill, not a flexible pool a merchant draws down on demand at arbitrary times -- that primitive is what Razorpay actually calls Recurring Payments, and that one *is* gated. Claiming this feature makes Guardrail's ad-hoc, merchant-triggered spend drawdown itself bank-enforced would be dishonest about what a Subscription is. What it's honestly scoped to instead: a customer can register a real monthly top-up ("refresh my AI agent's ₹5000 allowance every month") via UPI AutoPay/eMandate/card at Razorpay's own real hosted checkout (the `short_url` a real `POST /v1/subscriptions` call returns) -- and the refresh itself only ever happens because Razorpay's own banking rail already confirmed that period's charge.
+
+The mechanism: `guardrail.renew_mandate(mandate_id, new_expires_at)` resets the mandate's spend counter to 0 and moves its expiry to `new_expires_at` -- `max_amount_inr`, the ceiling itself, is never touched, so a refresh makes the existing ceiling available again rather than growing it. It's only ever called from `_handle_subscription_charged` in `api/routes/webhooks.py`, reacting to a real, signature-verified `subscription.charged` webhook -- the same HMAC verification `payment.captured` and the dispute webhooks already use. `new_expires_at` is the webhook payload's own real `current_end`, Razorpay's actual billing-cycle boundary, not a guessed 30-day offset, so the mandate's window matches the bank-confirmed cycle exactly. Idempotent against webhook redelivery via `paid_count`: Razorpay increments it by exactly 1 per real cycle, so a redelivered event for an already-processed cycle is a safe no-op, not a double top-up (proven directly in `api/test_webhooks.py`'s redelivery test).
+
+Verified live, not just unit-tested: `subscriptions/_demo_allowance_subscription.py` creates a real mandate, a real Plan and Subscription against Razorpay's actual test-mode API (visible in the real Dashboard), then POSTs a real signed `subscription.charged` webhook to a running server -- and the mandate's spend counter genuinely resets to 0 as an observed, not simulated, result. Also exercised end-to-end through the real customer-authenticated storefront UI (a logged-in customer's "Set up automatic monthly refresh" flow, verified live).
+
+## Disputes — AI-drafted chargeback evidence from the real audit trail
+
+Reconciliation and live verification both defend against *this system's own* records being wrong. `disputes/dispute_response.py` defends against a different, harder case: a customer's bank disputing a payment that was, in fact, legitimate. Razorpay's real Disputes API (`GET /v1/disputes`, `PATCH /v1/disputes/:id/contest`, `POST /v1/disputes/:id/accept`) is plain self-serve test-mode REST — unlike Route, Payouts, Recurring Payments, or Magic Checkout, none of which are usable without Razorpay approving an on-demand activation request first.
+
+When a real, signature-verified `payment.dispute.created` webhook arrives (`api/routes/webhooks.py`, extending the exact same HMAC verification the `payment.captured` handler already does), `draft_evidence_from_audit_trail()` looks up the disputed order's real Guardrail verification record and the Parity fairness check that gated it, and composes a natural-language defense: the mandate that authorized it, the fairness verdict at time of purchase, and Guardrail's own independent re-verification of the captured amount with Razorpay. That draft is saved via a real `PATCH .../contest` call with `action: "draft"` — a real, Razorpay-documented distinction from `action: "submit"`: a draft is saved on Razorpay's own system but never sent to the customer's bank. Nothing in this codebase ever passes `action: "submit"` or calls `POST .../accept` except two explicit, admin-initiated dashboard actions — the same "detect, don't auto-act on anything irreversible" shape as live-verification's remediation button.
+
+Razorpay exposes no self-serve way to create a real test-mode dispute (they're bank/issuer-initiated), so there's no way to fully exercise the real `contest`/`accept` calls end to end without an actual dispute on the account — a real, honestly-documented limitation (see README.md's "Demoing the disputes feature"), not a gap in the code. `disputes/_demo_dispute.py` sends a genuine, HMAC-signed HTTP webhook to a running server referencing a real completed order, so the signature verification, the evidence drafting, and the (honestly-404ing) real Razorpay call are all exercised for real; only the "a real dispute already exists" precondition can't be manufactured on demand. Proven otherwise by 19 tests across `disputes/test_dispute_response.py` and `api/test_webhooks.py`'s dispute-event cases (evidence drafting with and without a matching order, the real-API-404 path handled honestly, status-sync from `payment.dispute.{won,lost,closed,under_review,action_required}`, and the submit/accept guardrails).
 
 ## The audit trail and source tagging
 
@@ -141,10 +195,12 @@ TechBazaar targets a mix of **Track 1 (AI Growth & Agentic Commerce)** and **Tra
 |---|---|
 | Sellable to AI buyers end to end | `mcp_server/techbazaar_mcp_server.py` — a real MCP server, not a mocked "AI buyer" script calling its own API. Verified via genuine spawned-subprocess protocol test. |
 | Bounded | Guardrail mandates — a spend limit an AI buyer's own `purchase()` calls cannot exceed, enforced by the merchant, not trusted from the caller. Proven race-free under real concurrent load. |
+| Bounded, defense-in-depth | `subscriptions/allowance_subscription.py` — a customer can optionally register their mandate's monthly refresh as a real UPI AutoPay/eMandate authorization, so the spend ceiling isn't only enforced by this app's own database: the customer's bank independently confirms it too. |
 | Gated | Every purchase runs `check_price_fairness` before `execute_purchase`; a flagged price is never bought. |
 | Explainable / audit trail | Every action — human or AI-buyer — lands in `audit_log.jsonl`, attributable by `customer_id`/`requesting_customer_id`, visible live on the dashboard's Connected AI Agents and Live Activity panels. |
 | One failure handled gracefully | Multiple real paths: over-budget mandate block (with the exact reason and what would fix it), wrong-mandate-ownership block (IDOR-safe, not just a generic 403), flagged-price refusal, Groq rate-limit retry-then-honest-failure. |
 | Grow revenue | `growth/upsell.py` — real, catalog-grounded complementary-product suggestions offered after a purchase, by both the storefront agent and the MCP server. |
+| Agent-to-agent commerce | `negotiation/negotiation.py` — genuine price negotiation, bounded by Parity's own fairness math the whole way. Not a metaphor: an AI buyer and the merchant's pricing agent are two real, independent decision-makers reaching a real agreement, verified live over the actual MCP protocol. |
 
 ### Track 4 — "run the books and the cash position"
 
@@ -157,6 +213,8 @@ TechBazaar targets a mix of **Track 1 (AI Growth & Agentic Commerce)** and **Tra
 | Honest exception list | Every unmatched record surfaces as one of 5 typed exceptions with a specific reason (exact ₹ diff, exact settlement ID) — nothing is silently dropped, and `orphan_settlement` covers the one case that isn't even keyed to a real order. |
 | Not cherry-picked | The batch is deliberately *not* all-clean matches (14 seeded exceptions across all 5 types) — a 100%-clean batch would prove nothing about exception handling. |
 | Settlement Q&A agent | `reconciliation/settlement_qa.py` — a second Track 4 example direction, built alongside the batch report rather than instead of it. |
+| Detect *and* fix, not just detect | `reconciliation/live_verification.py` — re-verifies real purchases against Razorpay's own current record (not just this app's own files) and, for the one exception type that's unambiguous (`overcharge_drift`), lets an admin issue a real, re-verified-before-acting refund for exactly the difference in one click, closing the loop from "we found a discrepancy" to "it's fixed" rather than stopping at detection. |
+| Defend, not just detect | `disputes/dispute_response.py` — a real chargeback webhook gets a real AI-drafted evidence response, built from this system's own verified audit trail and saved as a real draft on Razorpay's side, with submission/acceptance always a deliberate, confirmed admin click. A materially harder finance-ops problem than reconciliation alone, using an unrestricted, self-serve real Razorpay API. |
 
 ### What's honestly still open
 
