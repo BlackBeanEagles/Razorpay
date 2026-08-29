@@ -1,0 +1,426 @@
+[
+  {
+    "order_id": "ord_0032",
+    "product_id": "p007",
+    "customer_id": "c002",
+    "expected_amount_inr": 4499,
+    "order_date": "2026-08-09",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0052",
+    "product_id": "p001",
+    "customer_id": "c013",
+    "expected_amount_inr": 1799,
+    "order_date": "2026-08-11",
+    "_expected_reconciliation_status": "status_exception"
+  },
+  {
+    "order_id": "ord_0050",
+    "product_id": "p004",
+    "customer_id": "c009",
+    "expected_amount_inr": 2999,
+    "order_date": "2026-08-11",
+    "_expected_reconciliation_status": "duplicate_settlement"
+  },
+  {
+    "order_id": "ord_0046",
+    "product_id": "p015",
+    "customer_id": "c016",
+    "expected_amount_inr": 1099,
+    "order_date": "2026-08-25",
+    "_expected_reconciliation_status": "amount_mismatch"
+  },
+  {
+    "order_id": "ord_0040",
+    "product_id": "p024",
+    "customer_id": "c008",
+    "expected_amount_inr": 1499,
+    "order_date": "2026-08-10",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0024",
+    "product_id": "p003",
+    "customer_id": "c016",
+    "expected_amount_inr": 3499,
+    "order_date": "2026-08-17",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0025",
+    "product_id": "p022",
+    "customer_id": "c010",
+    "expected_amount_inr": 699,
+    "order_date": "2026-08-08",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0036",
+    "product_id": "p015",
+    "customer_id": "c003",
+    "expected_amount_inr": 1099,
+    "order_date": "2026-08-02",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0048",
+    "product_id": "p012",
+    "customer_id": "c003",
+    "expected_amount_inr": 299,
+    "order_date": "2026-08-11",
+    "_expected_reconciliation_status": "missing_settlement"
+  },
+  {
+    "order_id": "ord_0018",
+    "product_id": "p015",
+    "customer_id": "c002",
+    "expected_amount_inr": 1099,
+    "order_date": "2026-08-23",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0037",
+    "product_id": "p012",
+    "customer_id": "c014",
+    "expected_amount_inr": 299,
+    "order_date": "2026-08-25",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0043",
+    "product_id": "p020",
+    "customer_id": "c011",
+    "expected_amount_inr": 899,
+    "order_date": "2026-08-12",
+    "_expected_reconciliation_status": "amount_mismatch"
+  },
+  {
+    "order_id": "ord_0003",
+    "product_id": "p026",
+    "customer_id": "c016",
+    "expected_amount_inr": 899,
+    "order_date": "2026-08-09",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0010",
+    "product_id": "p022",
+    "customer_id": "c004",
+    "expected_amount_inr": 699,
+    "order_date": "2026-08-01",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0038",
+    "product_id": "p022",
+    "customer_id": "c005",
+    "expected_amount_inr": 699,
+    "order_date": "2026-08-17",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0041",
+    "product_id": "p020",
+    "customer_id": "c012",
+    "expected_amount_inr": 899,
+    "order_date": "2026-08-07",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0013",
+    "product_id": "p019",
+    "customer_id": "c006",
+    "expected_amount_inr": 2799,
+    "order_date": "2026-08-26",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0049",
+    "product_id": "p023",
+    "customer_id": "c004",
+    "expected_amount_inr": 1699,
+    "order_date": "2026-08-12",
+    "_expected_reconciliation_status": "missing_settlement"
+  },
+  {
+    "order_id": "ord_0006",
+    "product_id": "p022",
+    "customer_id": "c004",
+    "expected_amount_inr": 699,
+    "order_date": "2026-08-20",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0016",
+    "product_id": "p015",
+    "customer_id": "c012",
+    "expected_amount_inr": 1099,
+    "order_date": "2026-08-11",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0023",
+    "product_id": "p002",
+    "customer_id": "c008",
+    "expected_amount_inr": 999,
+    "order_date": "2026-08-14",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0029",
+    "product_id": "p025",
+    "customer_id": "c006",
+    "expected_amount_inr": 599,
+    "order_date": "2026-08-20",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0009",
+    "product_id": "p022",
+    "customer_id": "c006",
+    "expected_amount_inr": 699,
+    "order_date": "2026-08-22",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0028",
+    "product_id": "p011",
+    "customer_id": "c007",
+    "expected_amount_inr": 1799,
+    "order_date": "2026-08-27",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0045",
+    "product_id": "p018",
+    "customer_id": "c016",
+    "expected_amount_inr": 3999,
+    "order_date": "2026-08-10",
+    "_expected_reconciliation_status": "amount_mismatch"
+  },
+  {
+    "order_id": "ord_0033",
+    "product_id": "p022",
+    "customer_id": "c015",
+    "expected_amount_inr": 699,
+    "order_date": "2026-08-12",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0039",
+    "product_id": "p011",
+    "customer_id": "c008",
+    "expected_amount_inr": 1799,
+    "order_date": "2026-08-19",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0015",
+    "product_id": "p021",
+    "customer_id": "c008",
+    "expected_amount_inr": 449,
+    "order_date": "2026-08-27",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0026",
+    "product_id": "p015",
+    "customer_id": "c006",
+    "expected_amount_inr": 1099,
+    "order_date": "2026-08-01",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0011",
+    "product_id": "p021",
+    "customer_id": "c016",
+    "expected_amount_inr": 449,
+    "order_date": "2026-08-11",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0047",
+    "product_id": "p014",
+    "customer_id": "c007",
+    "expected_amount_inr": 3299,
+    "order_date": "2026-08-09",
+    "_expected_reconciliation_status": "missing_settlement"
+  },
+  {
+    "order_id": "ord_0004",
+    "product_id": "p012",
+    "customer_id": "c004",
+    "expected_amount_inr": 299,
+    "order_date": "2026-08-19",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0035",
+    "product_id": "p024",
+    "customer_id": "c008",
+    "expected_amount_inr": 1499,
+    "order_date": "2026-08-26",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0008",
+    "product_id": "p009",
+    "customer_id": "c010",
+    "expected_amount_inr": 399,
+    "order_date": "2026-08-23",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0001",
+    "product_id": "p012",
+    "customer_id": "c011",
+    "expected_amount_inr": 299,
+    "order_date": "2026-08-07",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0027",
+    "product_id": "p015",
+    "customer_id": "c007",
+    "expected_amount_inr": 1099,
+    "order_date": "2026-08-06",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0012",
+    "product_id": "p020",
+    "customer_id": "c001",
+    "expected_amount_inr": 899,
+    "order_date": "2026-08-03",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0014",
+    "product_id": "p001",
+    "customer_id": "c002",
+    "expected_amount_inr": 1799,
+    "order_date": "2026-08-22",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0030",
+    "product_id": "p017",
+    "customer_id": "c014",
+    "expected_amount_inr": 5499,
+    "order_date": "2026-08-09",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0020",
+    "product_id": "p008",
+    "customer_id": "c013",
+    "expected_amount_inr": 899,
+    "order_date": "2026-08-10",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0031",
+    "product_id": "p023",
+    "customer_id": "c001",
+    "expected_amount_inr": 1699,
+    "order_date": "2026-08-16",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0021",
+    "product_id": "p021",
+    "customer_id": "c005",
+    "expected_amount_inr": 449,
+    "order_date": "2026-08-05",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0017",
+    "product_id": "p005",
+    "customer_id": "c010",
+    "expected_amount_inr": 1299,
+    "order_date": "2026-08-18",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0051",
+    "product_id": "p024",
+    "customer_id": "c013",
+    "expected_amount_inr": 1499,
+    "order_date": "2026-08-11",
+    "_expected_reconciliation_status": "duplicate_settlement"
+  },
+  {
+    "order_id": "ord_0042",
+    "product_id": "p003",
+    "customer_id": "c014",
+    "expected_amount_inr": 3499,
+    "order_date": "2026-08-18",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0022",
+    "product_id": "p009",
+    "customer_id": "c002",
+    "expected_amount_inr": 399,
+    "order_date": "2026-08-22",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0019",
+    "product_id": "p021",
+    "customer_id": "c004",
+    "expected_amount_inr": 449,
+    "order_date": "2026-08-16",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0044",
+    "product_id": "p017",
+    "customer_id": "c001",
+    "expected_amount_inr": 5499,
+    "order_date": "2026-08-01",
+    "_expected_reconciliation_status": "amount_mismatch"
+  },
+  {
+    "order_id": "ord_0007",
+    "product_id": "p026",
+    "customer_id": "c012",
+    "expected_amount_inr": 899,
+    "order_date": "2026-08-08",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0053",
+    "product_id": "p011",
+    "customer_id": "c001",
+    "expected_amount_inr": 1799,
+    "order_date": "2026-08-15",
+    "_expected_reconciliation_status": "status_exception"
+  },
+  {
+    "order_id": "ord_0034",
+    "product_id": "p002",
+    "customer_id": "c007",
+    "expected_amount_inr": 999,
+    "order_date": "2026-08-16",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0002",
+    "product_id": "p015",
+    "customer_id": "c008",
+    "expected_amount_inr": 1099,
+    "order_date": "2026-08-01",
+    "_expected_reconciliation_status": "matched"
+  },
+  {
+    "order_id": "ord_0005",
+    "product_id": "p003",
+    "customer_id": "c007",
+    "expected_amount_inr": 3499,
+    "order_date": "2026-08-27",
+    "_expected_reconciliation_status": "matched"
+  }
+]
