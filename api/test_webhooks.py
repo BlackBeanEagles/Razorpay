@@ -13,6 +13,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from api.routes import webhooks
 from guardrail import guardrail
+from disputes import dispute_response
 
 _TEST_SECRET = "test_webhook_secret_12345"
 
@@ -22,10 +23,12 @@ _TEST_SECRET = "test_webhook_secret_12345"
 # already takes care to avoid touching.
 _MANDATE_PATH = os.path.join(os.path.dirname(__file__), "_isolated_test_webhook_mandates.json")
 _LEDGER_PATH = os.path.join(os.path.dirname(__file__), "_isolated_test_webhook_ledger.json")
+_DISPUTES_PATH = os.path.join(os.path.dirname(__file__), "_isolated_test_webhook_disputes.json")
 
 
 def setup_module():
     guardrail.use_isolated_store(_MANDATE_PATH, _LEDGER_PATH)
+    dispute_response.DISPUTES_PATH = _DISPUTES_PATH
 
 
 def setup():
@@ -41,6 +44,13 @@ def setup():
         os.remove(_LEDGER_PATH)
     if os.path.exists(guardrail.PENDING_PURCHASES_PATH):
         os.remove(guardrail.PENDING_PURCHASES_PATH)
+    if os.path.exists(_DISPUTES_PATH):
+        os.remove(_DISPUTES_PATH)
+    # No real Razorpay call attempted for this file's dispute tests -- webhook signature
+    # verification and the local drafting/status-sync logic are what's under test here, not the
+    # real Disputes REST call (that's covered against a mocked client in
+    # disputes/test_dispute_response.py).
+    dispute_response.razorpay_rest.REAL_CHECKOUT_AVAILABLE = False
 
 
 def _sign(body: bytes) -> str:
@@ -51,6 +61,24 @@ def _payment_captured_event(order_id: str, amount_paise: int = 50000) -> bytes:
     return json.dumps({
         "entity": "event", "event": "payment.captured", "contains": ["payment"],
         "payload": {"payment": {"entity": {"id": "pay_test_123", "order_id": order_id, "amount": amount_paise, "status": "captured"}}},
+    }).encode()
+
+
+def _dispute_created_event(dispute_id: str, order_id: str, payment_id: str = "pay_disputed_1", amount_paise: int = 50000) -> bytes:
+    return json.dumps({
+        "entity": "event", "event": "payment.dispute.created", "contains": ["payment", "dispute"],
+        "payload": {
+            "payment": {"entity": {"id": payment_id, "order_id": order_id, "amount": amount_paise, "status": "captured"}},
+            "dispute": {"entity": {"id": dispute_id, "payment_id": payment_id, "amount": amount_paise,
+                                    "reason_code": "chargeback", "respond_by": 1999999999, "status": "open"}},
+        },
+    }).encode()
+
+
+def _dispute_status_event(event_name: str, dispute_id: str) -> bytes:
+    return json.dumps({
+        "entity": "event", "event": event_name, "contains": ["payment", "dispute"],
+        "payload": {"dispute": {"entity": {"id": dispute_id, "status": event_name.rsplit(".", 1)[-1]}}},
     }).encode()
 
 
@@ -209,3 +237,66 @@ def test_genuinely_concurrent_frontend_confirm_and_webhook_never_double_count():
     finally:
         razorpay_rest.create_order = orig_create_order
         razorpay_rest.captured_amount_inr = orig_captured
+
+
+def test_dispute_created_webhook_drafts_evidence_from_a_real_ledger_entry():
+    from guardrail import razorpay_rest
+    setup()
+    orig_create_order = razorpay_rest.create_order
+    orig_captured = razorpay_rest.captured_amount_inr
+    razorpay_rest.create_order = lambda amount_inr, receipt: {"id": "order_disputed_webhook_1"}
+    razorpay_rest.captured_amount_inr = lambda order_id: 500
+    try:
+        token = guardrail.get_mandate_token("m_default")
+        guardrail.initiate_purchase(token, "p001", 500, requesting_customer_id="c888")
+        confirm_body = _payment_captured_event("order_disputed_webhook_1")
+        _call_webhook(confirm_body, _sign(confirm_body))  # real success ledger entry to dispute against
+
+        dispute_body = _dispute_created_event("disp_webhook_1", "order_disputed_webhook_1")
+        data = _call_webhook(dispute_body, _sign(dispute_body))
+        assert data["ok"] is True
+        draft = data["dispute_draft"]
+        assert draft["dispute_id"] == "disp_webhook_1"
+        assert draft["evidence_found"] is True
+        assert "m_default" in draft["summary"]
+        assert dispute_response.get_dispute_draft("disp_webhook_1")["status"] == "draft_pending"
+    finally:
+        razorpay_rest.create_order = orig_create_order
+        razorpay_rest.captured_amount_inr = orig_captured
+
+
+def test_dispute_created_webhook_with_no_matching_order_is_still_an_honest_draft():
+    setup()
+    body = _dispute_created_event("disp_webhook_2", "order_nobody_placed")
+    data = _call_webhook(body, _sign(body))
+    assert data["ok"] is True
+    assert data["dispute_draft"]["evidence_found"] is False
+
+
+def test_dispute_created_webhook_missing_dispute_id_is_rejected():
+    setup()
+    body = json.dumps({
+        "entity": "event", "event": "payment.dispute.created", "contains": ["payment", "dispute"],
+        "payload": {"payment": {"entity": {"id": "pay_x", "order_id": "order_x"}}, "dispute": {"entity": {}}},
+    }).encode()
+    data = _call_webhook(body, _sign(body))
+    assert data["ok"] is False
+
+
+def test_dispute_status_webhook_updates_an_existing_draft():
+    setup()
+    created_body = _dispute_created_event("disp_webhook_3", "order_whatever")
+    _call_webhook(created_body, _sign(created_body))
+
+    won_body = _dispute_status_event("payment.dispute.won", "disp_webhook_3")
+    data = _call_webhook(won_body, _sign(won_body))
+    assert data["ok"] is True
+    assert dispute_response.get_dispute_draft("disp_webhook_3")["status"] == "won"
+
+
+def test_dispute_status_webhook_with_no_local_draft_is_a_safe_noop():
+    setup()
+    body = _dispute_status_event("payment.dispute.lost", "disp_never_seen")
+    data = _call_webhook(body, _sign(body))
+    assert data["ok"] is True
+    assert dispute_response.get_dispute_draft("disp_never_seen") is None

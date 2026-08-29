@@ -12,6 +12,11 @@ what was actually captured before ever touching mandate spend. The webhook is on
 *triggers* that call in a case the frontend path can't cover; it is never trusted on its own
 say-so.
 
+Also handles the payment.dispute.* events (see disputes/dispute_response.py): a real chargeback
+notification triggers an AI-drafted evidence response built from this system's own audit trail,
+saved as a real draft on Razorpay's side -- never auto-submitted, that stays a deliberate admin
+click on the dashboard.
+
 Not accessible from the public internet without a real HTTPS tunnel to this local server (ngrok,
 Razorpay's own CLI forwarding, or a real deployment) -- see README.md for how to actually wire
 this up to a live Razorpay Dashboard webhook subscription and test it end to end.
@@ -27,6 +32,7 @@ from fastapi import APIRouter, Request
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from guardrail import guardrail
 from audit.audit_log import log_event
+from disputes import dispute_response
 
 router = APIRouter()
 
@@ -35,7 +41,17 @@ WEBHOOK_VERIFICATION_AVAILABLE = bool(RAZORPAY_WEBHOOK_SECRET)
 
 # Event types this handler acts on -- payment.captured is the direct, unambiguous "money moved"
 # signal. order.paid fires for the same underlying event and would just be redundant work.
-_HANDLED_EVENTS = {"payment.captured"}
+_PAYMENT_EVENTS = {"payment.captured"}
+
+_DISPUTE_CREATED_EVENT = "payment.dispute.created"
+# The rest of the dispute lifecycle -- just mirrored onto the local draft record so the dashboard
+# reflects Razorpay's own real outcome; nothing here acts on these, they're status-sync only.
+_DISPUTE_STATUS_EVENTS = {
+    "payment.dispute.won": "won", "payment.dispute.lost": "lost", "payment.dispute.closed": "closed",
+    "payment.dispute.under_review": "under_review", "payment.dispute.action_required": "action_required",
+}
+
+_HANDLED_EVENTS = _PAYMENT_EVENTS | {_DISPUTE_CREATED_EVENT} | set(_DISPUTE_STATUS_EVENTS)
 
 
 def _verify_signature(raw_body: bytes, signature: str) -> bool:
@@ -75,6 +91,14 @@ async def razorpay_webhook(request: Request):
     if event_type not in _HANDLED_EVENTS:
         return {"ok": True, "detail": f"Event {event_type!r} not handled, ignored."}
 
+    if event_type in _DISPUTE_STATUS_EVENTS:
+        return _handle_dispute_status_event(event_type, event)
+    if event_type == _DISPUTE_CREATED_EVENT:
+        return _handle_dispute_created(event)
+    return _handle_payment_captured(event_type, event)
+
+
+def _handle_payment_captured(event_type: str, event: dict) -> dict:
     payment_entity = event.get("payload", {}).get("payment", {}).get("entity", {})
     razorpay_order_id = payment_entity.get("order_id")
     if not razorpay_order_id:
@@ -102,3 +126,35 @@ async def razorpay_webhook(request: Request):
         requesting_customer_id=pending["requesting_customer_id"],
     )
     return {"ok": True, "confirm_result": result}
+
+
+def _handle_dispute_created(event: dict) -> dict:
+    payment_entity = event.get("payload", {}).get("payment", {}).get("entity", {})
+    dispute_entity = event.get("payload", {}).get("dispute", {}).get("entity", {})
+    dispute_id = dispute_entity.get("id")
+    if not dispute_id:
+        log_event("disputes", "webhook_received", {"event": _DISPUTE_CREATED_EVENT}, {"detail": "no dispute id in payload"}, "blocked")
+        return {"ok": False, "detail": "No dispute id in payload."}
+
+    record = dispute_response.record_dispute_created(
+        dispute_id=dispute_id,
+        payment_id=dispute_entity.get("payment_id") or payment_entity.get("id"),
+        razorpay_order_id=payment_entity.get("order_id"),
+        amount_inr=(dispute_entity.get("amount") or 0) / 100,
+        reason_code=dispute_entity.get("reason_code"),
+        respond_by=dispute_entity.get("respond_by"),
+    )
+    return {"ok": True, "dispute_draft": record}
+
+
+def _handle_dispute_status_event(event_type: str, event: dict) -> dict:
+    dispute_entity = event.get("payload", {}).get("dispute", {}).get("entity", {})
+    dispute_id = dispute_entity.get("id")
+    if not dispute_id:
+        return {"ok": False, "detail": "No dispute id in payload."}
+
+    new_status = _DISPUTE_STATUS_EVENTS[event_type]
+    updated = dispute_response.update_dispute_status(dispute_id, new_status)
+    if updated is None:
+        return {"ok": True, "detail": f"No local draft on file for dispute {dispute_id!r} -- status change ignored."}
+    return {"ok": True, "detail": f"Dispute {dispute_id} status updated to {new_status!r}."}

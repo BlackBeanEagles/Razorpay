@@ -98,3 +98,44 @@ def refund_payment(payment_id: str, amount_inr: float) -> dict:
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def fetch_dispute(dispute_id: str) -> dict:
+    resp = requests.get(
+        f"{_BASE_URL}/disputes/{dispute_id}",
+        auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def contest_dispute(dispute_id: str, summary: str, action: str, amount_inr: float = None) -> dict:
+    """Drafts or submits evidence against a real dispute via Razorpay's Disputes API
+    (PATCH /v1/disputes/:id/contest). action="draft" saves the evidence on Razorpay's own system
+    WITHOUT submitting it -- Razorpay's own documented behavior, not something this module
+    enforces -- so a draft can be reviewed and edited before anyone commits to it. Only
+    action="submit" actually sends it to the customer's bank for review."""
+    body = {"summary": summary, "action": action}
+    if amount_inr is not None:
+        body["amount"] = round(amount_inr * 100)
+    resp = requests.patch(
+        f"{_BASE_URL}/disputes/{dispute_id}/contest",
+        auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+        json=body,
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def accept_dispute(dispute_id: str) -> dict:
+    """Accepts a dispute (POST /v1/disputes/:id/accept) -- the customer is refunded. Used only
+    when a human admin has decided the dispute is legitimate, never automatically."""
+    resp = requests.post(
+        f"{_BASE_URL}/disputes/{dispute_id}/accept",
+        auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()

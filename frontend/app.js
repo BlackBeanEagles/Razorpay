@@ -935,20 +935,21 @@ async function initDashboard() {
     window.location.href = "login.html";
   });
 
-  const [batchResRaw, auditResRaw, aiAgentsResRaw, liveStatsResRaw, supportResRaw, liveCheckResRaw] = await Promise.all([
+  const [batchResRaw, auditResRaw, aiAgentsResRaw, liveStatsResRaw, supportResRaw, liveCheckResRaw, disputesResRaw] = await Promise.all([
     fetch(`${API_BASE}/api/batch-results`),
     fetch(`${API_BASE}/api/audit-log?limit=300`),
     fetch(`${API_BASE}/api/ai-agents`),
     fetch(`${API_BASE}/api/live-stats`),
     fetch(`${API_BASE}/api/support-requests`),
     fetch(`${API_BASE}/api/reconciliation/live-check`),
+    fetch(`${API_BASE}/api/disputes`),
   ]);
-  if ([batchResRaw, auditResRaw, aiAgentsResRaw, liveStatsResRaw, supportResRaw, liveCheckResRaw].some((r) => r.status === 401)) {
+  if ([batchResRaw, auditResRaw, aiAgentsResRaw, liveStatsResRaw, supportResRaw, liveCheckResRaw, disputesResRaw].some((r) => r.status === 401)) {
     window.location.href = "login.html";
     return;
   }
-  const [batchRes, auditRes, aiAgentsRes, liveStats, supportRes, liveCheckRes] = await Promise.all([
-    batchResRaw.json(), auditResRaw.json(), aiAgentsResRaw.json(), liveStatsResRaw.json(), supportResRaw.json(), liveCheckResRaw.json(),
+  const [batchRes, auditRes, aiAgentsRes, liveStats, supportRes, liveCheckRes, disputesRes] = await Promise.all([
+    batchResRaw.json(), auditResRaw.json(), aiAgentsResRaw.json(), liveStatsResRaw.json(), supportResRaw.json(), liveCheckResRaw.json(), disputesResRaw.json(),
   ]);
 
   // batchRes.reconciliation (rc) is still real, per-record data (which live purchases vs. the
@@ -1062,6 +1063,88 @@ async function initDashboard() {
         } catch (e) {
           btn.disabled = false;
           btn.textContent = "Refund overcharge";
+          window.alert("Could not reach the server.");
+        }
+      });
+    });
+  }
+
+  renderDisputes((disputesRes && disputesRes.disputes) || []);
+  function renderDisputes(list) {
+    const summaryEl = document.getElementById("disputesSummary");
+    const body = document.getElementById("disputesTableBody");
+    const pending = list.filter((d) => d.status === "draft_pending" || d.status === "action_required").length;
+    summaryEl.textContent = `-- ${list.length} total, ${pending} awaiting review`;
+    const statusToPill = {
+      draft_pending: "flagged", action_required: "flagged", under_review: "ok",
+      submitted: "ok", won: "ok", accepted: "ok", lost: "failed", closed: "",
+    };
+    const actionable = new Set(["draft_pending", "action_required", "under_review"]);
+    body.innerHTML = list.length
+      ? list.map((d) => `
+        <tr data-dispute-id="${escapeHtml(d.dispute_id)}">
+          <td>${escapeHtml(d.dispute_id)}${d.evidence_found ? "" : ` <span class="pill failed" title="No matching order found in our own ledger">no match</span>`}</td>
+          <td>${escapeHtml(d.razorpay_order_id || "--")}</td>
+          <td>${inr(d.amount_inr)}</td>
+          <td><span class="pill ${pillClass(statusToPill[d.status] || "")}">${escapeHtml((d.status || "").replace(/_/g, " "))}</span></td>
+          <td><details><summary style="cursor:pointer;color:var(--text-dim);font-size:12px;">view drafted evidence</summary><pre style="white-space:pre-wrap;max-width:420px;">${escapeHtml(d.summary || "")}</pre></details></td>
+          <td>${actionable.has(d.status) ? `
+            <button type="button" class="btn-ghost dispute-submit-btn" data-id="${escapeHtml(d.dispute_id)}" style="padding:3px 9px;font-size:11px;">Submit response</button>
+            <button type="button" class="btn-ghost dispute-accept-btn" data-id="${escapeHtml(d.dispute_id)}" style="padding:3px 9px;font-size:11px;">Accept &amp; refund</button>
+          ` : ""}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="6">No disputes on file -- this panel fills in the moment a real payment.dispute.created webhook arrives.</td></tr>`;
+
+    body.querySelectorAll(".dispute-submit-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        const draft = list.find((d) => d.dispute_id === id);
+        const edited = window.prompt("Review/edit the evidence summary before it's sent to the customer's bank:", draft ? draft.summary : "");
+        if (edited === null) return;
+        if (!window.confirm(`Submit this response to Razorpay for dispute ${id}? This actually calls Razorpay and cannot be undone from here.`)) return;
+        btn.disabled = true;
+        btn.textContent = "...";
+        try {
+          const res = await fetch(`${API_BASE}/api/disputes/${encodeURIComponent(id)}/submit`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ summary: edited }),
+          });
+          const result = await res.json();
+          if (res.ok && result.status === "submitted") {
+            btn.closest("tr").querySelector("td:nth-child(4)").innerHTML = `<span class="pill ok">submitted</span>`;
+            btn.closest("tr").querySelector("td:last-child").innerHTML = "";
+          } else {
+            btn.disabled = false;
+            btn.textContent = "Submit response";
+            window.alert(result.detail || "Could not submit the response.");
+          }
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = "Submit response";
+          window.alert("Could not reach the server.");
+        }
+      });
+    });
+    body.querySelectorAll(".dispute-accept-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        if (!window.confirm(`Accept dispute ${id}? The customer is refunded in full and this cannot be undone from here.`)) return;
+        btn.disabled = true;
+        btn.textContent = "...";
+        try {
+          const res = await fetch(`${API_BASE}/api/disputes/${encodeURIComponent(id)}/accept`, { method: "POST" });
+          const result = await res.json();
+          if (res.ok && result.status === "accepted") {
+            btn.closest("tr").querySelector("td:nth-child(4)").innerHTML = `<span class="pill ok">accepted</span>`;
+            btn.closest("tr").querySelector("td:last-child").innerHTML = "";
+          } else {
+            btn.disabled = false;
+            btn.textContent = "Accept & refund";
+            window.alert(result.detail || "Could not accept the dispute.");
+          }
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = "Accept & refund";
           window.alert("Could not reach the server.");
         }
       });
