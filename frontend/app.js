@@ -394,7 +394,13 @@ async function checkoutCart() {
   for (const { product: p, qty } of entries) {
     if (stopped) break;
     for (let i = 0; i < qty; i++) {
-      const outcome = await runTurn(`Get me ${p.name}`);
+      // showUserBubble: false -- the "Checking out N items..." message above already told the
+      // user what's happening; showing "Get me X" again per item (the internal message actually
+      // sent to the agent) made it look like the user typed a second, separate request they
+      // never typed. addMsg still narrates progress via the agent's own reply, just not a fake
+      // extra user turn.
+      addMsg(`Working on ${p.name}...`, "agent");
+      const outcome = await runTurn(`Get me ${p.name}`, { showUserBubble: false });
       cart[p.product_id] = Math.max(0, (cart[p.product_id] || 0) - 1);
       if (cart[p.product_id] === 0) delete cart[p.product_id];
       if (outcome === "checkout") {
@@ -594,9 +600,9 @@ async function streamChat(message, onStage, onFinal, onCheckout, onError) {
   }
 }
 
-async function runTurn(message) {
+async function runTurn(message, { showUserBubble = true } = {}) {
   if (!document.getElementById("agentPanel").classList.contains("open")) toggleAgent();
-  addMsg(message, "user");
+  if (showUserBubble) addMsg(message, "user");
   // So the agent's product is never hidden by an active filter or search term.
   if (activeCategory !== "all") setActiveCategory("all");
   if (searchQuery) {
