@@ -1,0 +1,546 @@
+[
+  {
+    "entry_id": "pl001",
+    "product_id": "p010",
+    "customer_id": "c011",
+    "offered_price_inr": 954,
+    "legitimate_factor": null,
+    "is_seeded_unfair": true
+  },
+  {
+    "entry_id": "pl002",
+    "product_id": "p006",
+    "customer_id": "c002",
+    "offered_price_inr": 2510,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl003",
+    "product_id": "p006",
+    "customer_id": "c001",
+    "offered_price_inr": 2239,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl004",
+    "product_id": "p010",
+    "customer_id": "c004",
+    "offered_price_inr": 1106,
+    "legitimate_factor": "first_time_customer_promo",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl005",
+    "product_id": "p001",
+    "customer_id": "c014",
+    "offered_price_inr": 1644,
+    "legitimate_factor": "first_time_customer_promo",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl006",
+    "product_id": "p006",
+    "customer_id": "c013",
+    "offered_price_inr": 2485,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl007",
+    "product_id": "p001",
+    "customer_id": "c009",
+    "offered_price_inr": 1796,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl008",
+    "product_id": "p001",
+    "customer_id": "c003",
+    "offered_price_inr": 1701,
+    "legitimate_factor": "loyalty_tier_silver_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl009",
+    "product_id": "p010",
+    "customer_id": "c001",
+    "offered_price_inr": 1061,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl010",
+    "product_id": "p010",
+    "customer_id": "c013",
+    "offered_price_inr": 1426,
+    "legitimate_factor": null,
+    "is_seeded_unfair": true
+  },
+  {
+    "entry_id": "pl011",
+    "product_id": "p005",
+    "customer_id": "c012",
+    "offered_price_inr": 1223,
+    "legitimate_factor": "loyalty_tier_silver_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl012",
+    "product_id": "p001",
+    "customer_id": "c002",
+    "offered_price_inr": 1782,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl013",
+    "product_id": "p005",
+    "customer_id": "c011",
+    "offered_price_inr": 1295,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl014",
+    "product_id": "p010",
+    "customer_id": "c005",
+    "offered_price_inr": 1064,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl015",
+    "product_id": "p005",
+    "customer_id": "c008",
+    "offered_price_inr": 1191,
+    "legitimate_factor": "first_time_customer_promo",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl016",
+    "product_id": "p006",
+    "customer_id": "c015",
+    "offered_price_inr": 2203,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl017",
+    "product_id": "p001",
+    "customer_id": "c010",
+    "offered_price_inr": 1584,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl018",
+    "product_id": "p006",
+    "customer_id": "c011",
+    "offered_price_inr": 2509,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl019",
+    "product_id": "p001",
+    "customer_id": "c004",
+    "offered_price_inr": 1645,
+    "legitimate_factor": "first_time_customer_promo",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl020",
+    "product_id": "p005",
+    "customer_id": "c009",
+    "offered_price_inr": 1290,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl021",
+    "product_id": "p005",
+    "customer_id": "c001",
+    "offered_price_inr": 1157,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl022",
+    "product_id": "p010",
+    "customer_id": "c007",
+    "offered_price_inr": 1132,
+    "legitimate_factor": "loyalty_tier_silver_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl023",
+    "product_id": "p010",
+    "customer_id": "c012",
+    "offered_price_inr": 1131,
+    "legitimate_factor": "loyalty_tier_silver_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl024",
+    "product_id": "p006",
+    "customer_id": "c010",
+    "offered_price_inr": 2228,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl025",
+    "product_id": "p010",
+    "customer_id": "c014",
+    "offered_price_inr": 1095,
+    "legitimate_factor": "first_time_customer_promo",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl026",
+    "product_id": "p005",
+    "customer_id": "c014",
+    "offered_price_inr": 1204,
+    "legitimate_factor": "first_time_customer_promo",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl027",
+    "product_id": "p010",
+    "customer_id": "c003",
+    "offered_price_inr": 1134,
+    "legitimate_factor": "loyalty_tier_silver_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl028",
+    "product_id": "p001",
+    "customer_id": "c006",
+    "offered_price_inr": 1805,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl029",
+    "product_id": "p010",
+    "customer_id": "c015",
+    "offered_price_inr": 1064,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl030",
+    "product_id": "p006",
+    "customer_id": "c007",
+    "offered_price_inr": 2391,
+    "legitimate_factor": "loyalty_tier_silver_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl031",
+    "product_id": "p006",
+    "customer_id": "c011",
+    "offered_price_inr": 2024,
+    "legitimate_factor": null,
+    "is_seeded_unfair": true
+  },
+  {
+    "entry_id": "pl032",
+    "product_id": "p001",
+    "customer_id": "c013",
+    "offered_price_inr": 1782,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl033",
+    "product_id": "p010",
+    "customer_id": "c006",
+    "offered_price_inr": 860,
+    "legitimate_factor": null,
+    "is_seeded_unfair": true
+  },
+  {
+    "entry_id": "pl034",
+    "product_id": "p005",
+    "customer_id": "c002",
+    "offered_price_inr": 959,
+    "legitimate_factor": null,
+    "is_seeded_unfair": true
+  },
+  {
+    "entry_id": "pl035",
+    "product_id": "p005",
+    "customer_id": "c009",
+    "offered_price_inr": 1086,
+    "legitimate_factor": null,
+    "is_seeded_unfair": true
+  },
+  {
+    "entry_id": "pl036",
+    "product_id": "p006",
+    "customer_id": "c008",
+    "offered_price_inr": 2305,
+    "legitimate_factor": "first_time_customer_promo",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl037",
+    "product_id": "p001",
+    "customer_id": "c012",
+    "offered_price_inr": 1709,
+    "legitimate_factor": "loyalty_tier_silver_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl038",
+    "product_id": "p006",
+    "customer_id": "c003",
+    "offered_price_inr": 2376,
+    "legitimate_factor": "loyalty_tier_silver_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl039",
+    "product_id": "p010",
+    "customer_id": "c011",
+    "offered_price_inr": 1202,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl040",
+    "product_id": "p010",
+    "customer_id": "c009",
+    "offered_price_inr": 1209,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl041",
+    "product_id": "p010",
+    "customer_id": "c013",
+    "offered_price_inr": 1204,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl042",
+    "product_id": "p001",
+    "customer_id": "c011",
+    "offered_price_inr": 1789,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl043",
+    "product_id": "p005",
+    "customer_id": "c013",
+    "offered_price_inr": 1289,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl044",
+    "product_id": "p005",
+    "customer_id": "c004",
+    "offered_price_inr": 1203,
+    "legitimate_factor": "first_time_customer_promo",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl045",
+    "product_id": "p010",
+    "customer_id": "c006",
+    "offered_price_inr": 1196,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl046",
+    "product_id": "p005",
+    "customer_id": "c007",
+    "offered_price_inr": 1239,
+    "legitimate_factor": "loyalty_tier_silver_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl047",
+    "product_id": "p006",
+    "customer_id": "c012",
+    "offered_price_inr": 2351,
+    "legitimate_factor": "loyalty_tier_silver_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl048",
+    "product_id": "p005",
+    "customer_id": "c003",
+    "offered_price_inr": 1236,
+    "legitimate_factor": "loyalty_tier_silver_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl049",
+    "product_id": "p006",
+    "customer_id": "c005",
+    "offered_price_inr": 2218,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl050",
+    "product_id": "p010",
+    "customer_id": "c008",
+    "offered_price_inr": 1097,
+    "legitimate_factor": "first_time_customer_promo",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl051",
+    "product_id": "p001",
+    "customer_id": "c008",
+    "offered_price_inr": 1640,
+    "legitimate_factor": "first_time_customer_promo",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl052",
+    "product_id": "p010",
+    "customer_id": "c002",
+    "offered_price_inr": 1189,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl053",
+    "product_id": "p006",
+    "customer_id": "c014",
+    "offered_price_inr": 2289,
+    "legitimate_factor": "first_time_customer_promo",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl054",
+    "product_id": "p001",
+    "customer_id": "c001",
+    "offered_price_inr": 1606,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl055",
+    "product_id": "p006",
+    "customer_id": "c006",
+    "offered_price_inr": 2502,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl056",
+    "product_id": "p005",
+    "customer_id": "c002",
+    "offered_price_inr": 1292,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl057",
+    "product_id": "p006",
+    "customer_id": "c004",
+    "offered_price_inr": 2323,
+    "legitimate_factor": "first_time_customer_promo",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl058",
+    "product_id": "p005",
+    "customer_id": "c015",
+    "offered_price_inr": 1159,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl059",
+    "product_id": "p005",
+    "customer_id": "c009",
+    "offered_price_inr": 1063,
+    "legitimate_factor": null,
+    "is_seeded_unfair": true
+  },
+  {
+    "entry_id": "pl060",
+    "product_id": "p001",
+    "customer_id": "c002",
+    "offered_price_inr": 2291,
+    "legitimate_factor": null,
+    "is_seeded_unfair": true
+  },
+  {
+    "entry_id": "pl061",
+    "product_id": "p005",
+    "customer_id": "c010",
+    "offered_price_inr": 1168,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl062",
+    "product_id": "p001",
+    "customer_id": "c005",
+    "offered_price_inr": 1610,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl063",
+    "product_id": "p006",
+    "customer_id": "c009",
+    "offered_price_inr": 2517,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl064",
+    "product_id": "p010",
+    "customer_id": "c010",
+    "offered_price_inr": 1071,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl065",
+    "product_id": "p005",
+    "customer_id": "c006",
+    "offered_price_inr": 1307,
+    "legitimate_factor": null,
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl066",
+    "product_id": "p005",
+    "customer_id": "c005",
+    "offered_price_inr": 1143,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl067",
+    "product_id": "p001",
+    "customer_id": "c015",
+    "offered_price_inr": 1607,
+    "legitimate_factor": "loyalty_tier_gold_discount",
+    "is_seeded_unfair": false
+  },
+  {
+    "entry_id": "pl068",
+    "product_id": "p001",
+    "customer_id": "c007",
+    "offered_price_inr": 1723,
+    "legitimate_factor": "loyalty_tier_silver_discount",
+    "is_seeded_unfair": false
+  }
+]

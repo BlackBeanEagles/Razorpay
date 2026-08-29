@@ -1,0 +1,42 @@
+[
+  {
+    "mandate_id": "m_default",
+    "merchant_id": "merchant_test_1",
+    "max_amount_inr": 2000,
+    "issued_offset_hours": 0,
+    "expires_offset_hours": 24,
+    "single_use": false,
+    "amount_spent_so_far_inr": 0,
+    "_purpose": "Standard mandate used by most clean test_intents.json cases. Dates are relative to reset time (see guardrail.reset_mandate_store) so this never goes stale -- issued now, expires in 24h."
+  },
+  {
+    "mandate_id": "m_expired",
+    "merchant_id": "merchant_test_1",
+    "max_amount_inr": 2000,
+    "issued_offset_hours": -120,
+    "expires_offset_hours": -96,
+    "single_use": false,
+    "amount_spent_so_far_inr": 0,
+    "_purpose": "Deliberately expired -- always 4 days in the past relative to reset time, so it stays expired no matter when tests run. Used by i16 to test expiry enforcement."
+  },
+  {
+    "mandate_id": "m_single_use_spent",
+    "merchant_id": "merchant_test_1",
+    "max_amount_inr": 2000,
+    "issued_offset_hours": 0,
+    "expires_offset_hours": 24,
+    "single_use": true,
+    "amount_spent_so_far_inr": 1799,
+    "_purpose": "Single-use mandate already consumed by a prior purchase (amount_spent_so_far_inr > 0). Used by i17 to test single-use enforcement -- any further purchase attempt should be blocked regardless of amount."
+  },
+  {
+    "mandate_id": "m_cumulative_test",
+    "merchant_id": "merchant_test_1",
+    "max_amount_inr": 2000,
+    "issued_offset_hours": 0,
+    "expires_offset_hours": 24,
+    "single_use": false,
+    "amount_spent_so_far_inr": 0,
+    "_purpose": "Multi-use mandate for i18 -- starts at 0, first purchase (1799) should succeed and update amount_spent_so_far_inr, second purchase (2499) should be blocked because cumulative would exceed max_amount_inr (1799+2499=4298 > 2000)."
+  }
+]

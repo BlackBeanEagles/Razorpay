@@ -1,0 +1,236 @@
+[
+  {
+    "product_id": "p001",
+    "name": "Wireless Earbuds X200",
+    "category": "audio",
+    "price_inr": 1799,
+    "stock": 12,
+    "rating": 4.3,
+    "description": "Bluetooth 5.3 wireless earbuds, 24hr battery"
+  },
+  {
+    "product_id": "p002",
+    "name": "Wireless Earbuds Lite",
+    "category": "audio",
+    "price_inr": 999,
+    "stock": 20,
+    "rating": 3.9,
+    "description": "Budget Bluetooth earbuds, 18hr battery"
+  },
+  {
+    "product_id": "p003",
+    "name": "Wireless Earbuds Pro Max",
+    "category": "audio",
+    "price_inr": 3499,
+    "stock": 5,
+    "rating": 4.6,
+    "description": "Premium ANC wireless earbuds, 30hr battery"
+  },
+  {
+    "product_id": "p004",
+    "name": "Over-Ear Headphones Studio",
+    "category": "audio",
+    "price_inr": 2999,
+    "stock": 8,
+    "rating": 4.4,
+    "description": "Wired over-ear studio monitoring headphones"
+  },
+  {
+    "product_id": "p005",
+    "name": "Bluetooth Speaker Mini",
+    "category": "audio",
+    "price_inr": 1299,
+    "stock": 15,
+    "rating": 4.1,
+    "description": "Portable Bluetooth speaker, IPX7 waterproof"
+  },
+  {
+    "product_id": "p006",
+    "name": "Smartwatch Fit 2",
+    "category": "wearables",
+    "price_inr": 2499,
+    "stock": 10,
+    "rating": 4.2,
+    "description": "Fitness smartwatch with heart-rate monitor"
+  },
+  {
+    "product_id": "p007",
+    "name": "Smartwatch Fit 2 Pro",
+    "category": "wearables",
+    "price_inr": 4499,
+    "stock": 6,
+    "rating": 4.5,
+    "description": "Fitness smartwatch with GPS and SpO2"
+  },
+  {
+    "product_id": "p008",
+    "name": "Fitness Band Basic",
+    "category": "wearables",
+    "price_inr": 899,
+    "stock": 25,
+    "rating": 3.8,
+    "description": "Simple step and sleep tracker band"
+  },
+  {
+    "product_id": "p009",
+    "name": "Phone Case Slim",
+    "category": "accessories",
+    "price_inr": 399,
+    "stock": 40,
+    "rating": 4.0,
+    "description": "Slim-fit protective phone case"
+  },
+  {
+    "product_id": "p010",
+    "name": "Fast Charger 65W",
+    "category": "accessories",
+    "price_inr": 1199,
+    "stock": 18,
+    "rating": 4.3,
+    "description": "GaN fast charger, 65W USB-C"
+  },
+  {
+    "product_id": "p011",
+    "name": "Power Bank 20000mAh",
+    "category": "accessories",
+    "price_inr": 1799,
+    "stock": 0,
+    "rating": 4.2,
+    "description": "High-capacity power bank, dual USB-C output (currently out of stock)"
+  },
+  {
+    "product_id": "p012",
+    "name": "USB-C Cable 2m",
+    "category": "accessories",
+    "price_inr": 299,
+    "stock": 50,
+    "rating": 4.1,
+    "description": "Braided 2-meter USB-C to USB-C cable"
+  },
+  {
+    "product_id": "p013",
+    "name": "Wireless Mouse Compact",
+    "category": "computer-accessories",
+    "price_inr": 799,
+    "stock": 22,
+    "rating": 4.0,
+    "description": "Compact wireless mouse, silent click"
+  },
+  {
+    "product_id": "p014",
+    "name": "Mechanical Keyboard TKL",
+    "category": "computer-accessories",
+    "price_inr": 3299,
+    "stock": 0,
+    "rating": 4.5,
+    "description": "Tenkeyless mechanical keyboard, hot-swappable (currently out of stock)"
+  },
+  {
+    "product_id": "p015",
+    "name": "Laptop Stand Adjustable",
+    "category": "computer-accessories",
+    "price_inr": 1099,
+    "stock": 14,
+    "rating": 4.2,
+    "description": "Adjustable aluminum laptop stand"
+  },
+  {
+    "product_id": "p016",
+    "name": "Neckband Bluetooth Earphones",
+    "category": "audio",
+    "price_inr": 1099,
+    "stock": 16,
+    "rating": 4.0,
+    "description": "Sweat-resistant neckband earphones, magnetic buds, 20hr battery"
+  },
+  {
+    "product_id": "p017",
+    "name": "Studio Monitor Speakers (Pair)",
+    "category": "audio",
+    "price_inr": 5499,
+    "stock": 4,
+    "rating": 4.6,
+    "description": "Active studio monitor speaker pair, flat frequency response"
+  },
+  {
+    "product_id": "p018",
+    "name": "Smart Ring Health Tracker",
+    "category": "wearables",
+    "price_inr": 3999,
+    "stock": 7,
+    "rating": 4.1,
+    "description": "Sleep, heart-rate and SpO2 tracking smart ring"
+  },
+  {
+    "product_id": "p019",
+    "name": "Kids GPS Smartwatch",
+    "category": "wearables",
+    "price_inr": 2799,
+    "stock": 11,
+    "rating": 3.9,
+    "description": "GPS-tracking smartwatch for kids with SOS button"
+  },
+  {
+    "product_id": "p020",
+    "name": "Wireless Charging Pad 15W",
+    "category": "accessories",
+    "price_inr": 899,
+    "stock": 24,
+    "rating": 4.2,
+    "description": "Qi wireless charging pad, 15W fast charge"
+  },
+  {
+    "product_id": "p021",
+    "name": "Dashboard Phone Mount",
+    "category": "accessories",
+    "price_inr": 449,
+    "stock": 30,
+    "rating": 4.0,
+    "description": "Magnetic dashboard-mounted phone holder"
+  },
+  {
+    "product_id": "p022",
+    "name": "Portable Bluetooth Tracker Tag",
+    "category": "accessories",
+    "price_inr": 699,
+    "stock": 19,
+    "rating": 4.1,
+    "description": "Bluetooth item tracker with app-based find feature"
+  },
+  {
+    "product_id": "p023",
+    "name": "USB-C Hub 7-in-1",
+    "category": "computer-accessories",
+    "price_inr": 1699,
+    "stock": 13,
+    "rating": 4.3,
+    "description": "7-port USB-C hub with HDMI, SD card, and PD passthrough"
+  },
+  {
+    "product_id": "p024",
+    "name": "Webcam 1080p",
+    "category": "computer-accessories",
+    "price_inr": 1499,
+    "stock": 9,
+    "rating": 4.0,
+    "description": "1080p USB webcam with autofocus and built-in stereo microphone"
+  },
+  {
+    "product_id": "p025",
+    "name": "Desk Mat XL",
+    "category": "computer-accessories",
+    "price_inr": 599,
+    "stock": 35,
+    "rating": 4.4,
+    "description": "Extra-large stitched-edge desk mat, water-resistant surface"
+  },
+  {
+    "product_id": "p026",
+    "name": "Wireless Charging Stand",
+    "category": "accessories",
+    "price_inr": 899,
+    "stock": 15,
+    "rating": 4.3,
+    "description": "Fast wireless charging stand"
+  }
+]
