@@ -1,6 +1,7 @@
 """Acceptance tests for Guardrail (spec section 6)."""
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from guardrail import guardrail
@@ -398,6 +399,30 @@ def test_pending_purchase_survives_a_transient_verification_failure():
         razorpay_rest.captured_amount_inr = orig_captured
 
 
+def test_renew_mandate_resets_spend_and_moves_expiry():
+    setup()
+    token = guardrail.get_mandate_token("m_default")
+    guardrail.execute_purchase(token, "p001", 1799)
+    before = guardrail.get_mandate_state("m_default")
+    assert before["amount_spent_so_far_inr"] > 0
+
+    new_expiry = time.time() + 30 * 86400
+    renewed = guardrail.renew_mandate("m_default", new_expiry)
+    assert renewed["amount_spent_so_far_inr"] == 0
+    assert renewed["max_amount_inr"] == before["max_amount_inr"]  # the ceiling itself is untouched
+    assert abs(time.mktime(time.strptime(renewed["expires_at"][:19], "%Y-%m-%dT%H:%M:%S")) - time.mktime(time.gmtime(new_expiry))) < 2
+
+    # A fresh purchase up to the full (unspent) limit succeeds again after renewal.
+    token2 = guardrail.get_mandate_token("m_default")
+    r = guardrail.execute_purchase(token2, "p001", before["max_amount_inr"])
+    assert r["status"] == "success"
+
+
+def test_renew_mandate_unknown_mandate_returns_none():
+    setup()
+    assert guardrail.renew_mandate("m_nonexistent", time.time() + 86400) is None
+
+
 if __name__ == "__main__":
     test_clean_purchase_success()
     test_exceeds_mandate_blocked_before_razorpay()
@@ -415,4 +440,6 @@ if __name__ == "__main__":
     test_owned_mandate_visible_to_its_owner_via_get_mandate_state()
     test_concurrent_mandate_issuance_never_loses_a_mandate()
     test_concurrent_confirm_of_the_same_order_never_double_counts_spend()
+    test_renew_mandate_resets_spend_and_moves_expiry()
+    test_renew_mandate_unknown_mandate_returns_none()
     print("All Guardrail tests passed.")

@@ -9,6 +9,7 @@ guardrail/mandates.json
 guardrail/ledger.json
 guardrail/pending_purchases.json
 disputes/dispute_drafts.json
+subscriptions/allowance_subscriptions.json
 batch_tests/results/
 checkout_demo.html
 razorpay-mcp-server/

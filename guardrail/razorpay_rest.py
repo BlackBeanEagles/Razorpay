@@ -129,6 +129,40 @@ def contest_dispute(dispute_id: str, summary: str, action: str, amount_inr: floa
     return resp.json()
 
 
+def create_plan(amount_inr: float, period: str, interval: int, name: str, description: str = None) -> dict:
+    """Creates a real Razorpay billing Plan (POST /v1/plans) -- the fixed amount/schedule a
+    Subscription is later attached to. Used to represent a real, bank-registered "refresh this
+    customer's AI-agent spend allowance every period" charge -- see
+    subscriptions/allowance_subscription.py."""
+    item = {"name": name, "amount": round(amount_inr * 100), "currency": "INR"}
+    if description:
+        item["description"] = description
+    resp = requests.post(
+        f"{_BASE_URL}/plans",
+        auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+        json={"period": period, "interval": interval, "item": item},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def create_subscription(plan_id: str, total_count: int, notes: dict = None, customer_notify: bool = True) -> dict:
+    """Creates a real Razorpay Subscription (POST /v1/subscriptions) against a plan. The
+    response's short_url is Razorpay's own hosted checkout page where the customer authorizes
+    the recurring charge with their bank -- via UPI AutoPay, eMandate, or card -- Razorpay
+    handles that authorization UI entirely; this app never sees or touches bank credentials."""
+    resp = requests.post(
+        f"{_BASE_URL}/subscriptions",
+        auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+        json={"plan_id": plan_id, "total_count": total_count, "quantity": 1,
+              "customer_notify": customer_notify, "notes": notes or {}},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 def accept_dispute(dispute_id: str) -> dict:
     """Accepts a dispute (POST /v1/disputes/:id/accept) -- the customer is refunded. Used only
     when a human admin has decided the dispute is legitimate, never automatically."""

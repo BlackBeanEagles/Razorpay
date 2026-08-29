@@ -9,11 +9,13 @@ import hmac
 import json
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from api.routes import webhooks
 from guardrail import guardrail
 from disputes import dispute_response
+from subscriptions import allowance_subscription
 
 _TEST_SECRET = "test_webhook_secret_12345"
 
@@ -24,11 +26,13 @@ _TEST_SECRET = "test_webhook_secret_12345"
 _MANDATE_PATH = os.path.join(os.path.dirname(__file__), "_isolated_test_webhook_mandates.json")
 _LEDGER_PATH = os.path.join(os.path.dirname(__file__), "_isolated_test_webhook_ledger.json")
 _DISPUTES_PATH = os.path.join(os.path.dirname(__file__), "_isolated_test_webhook_disputes.json")
+_ALLOWANCE_SUBS_PATH = os.path.join(os.path.dirname(__file__), "_isolated_test_webhook_allowance_subs.json")
 
 
 def setup_module():
     guardrail.use_isolated_store(_MANDATE_PATH, _LEDGER_PATH)
     dispute_response.DISPUTES_PATH = _DISPUTES_PATH
+    allowance_subscription.SUBSCRIPTIONS_PATH = _ALLOWANCE_SUBS_PATH
 
 
 def setup():
@@ -46,6 +50,8 @@ def setup():
         os.remove(guardrail.PENDING_PURCHASES_PATH)
     if os.path.exists(_DISPUTES_PATH):
         os.remove(_DISPUTES_PATH)
+    if os.path.exists(_ALLOWANCE_SUBS_PATH):
+        os.remove(_ALLOWANCE_SUBS_PATH)
     # No real Razorpay call attempted for this file's dispute tests -- webhook signature
     # verification and the local drafting/status-sync logic are what's under test here, not the
     # real Disputes REST call (that's covered against a mocked client in
@@ -79,6 +85,20 @@ def _dispute_status_event(event_name: str, dispute_id: str) -> bytes:
     return json.dumps({
         "entity": "event", "event": event_name, "contains": ["payment", "dispute"],
         "payload": {"dispute": {"entity": {"id": dispute_id, "status": event_name.rsplit(".", 1)[-1]}}},
+    }).encode()
+
+
+def _subscription_charged_event(subscription_id: str, paid_count: int, current_end: int) -> bytes:
+    return json.dumps({
+        "entity": "event", "event": "subscription.charged", "contains": ["subscription", "payment"],
+        "payload": {"subscription": {"entity": {"id": subscription_id, "status": "active", "paid_count": paid_count, "current_end": current_end}}},
+    }).encode()
+
+
+def _subscription_status_event(event_name: str, subscription_id: str) -> bytes:
+    return json.dumps({
+        "entity": "event", "event": event_name, "contains": ["subscription"],
+        "payload": {"subscription": {"entity": {"id": subscription_id, "status": event_name.rsplit(".", 1)[-1]}}},
     }).encode()
 
 
@@ -300,3 +320,96 @@ def test_dispute_status_webhook_with_no_local_draft_is_a_safe_noop():
     data = _call_webhook(body, _sign(body))
     assert data["ok"] is True
     assert dispute_response.get_dispute_draft("disp_never_seen") is None
+
+
+def test_subscription_charged_webhook_renews_a_real_mandate():
+    from guardrail import razorpay_rest
+    setup()
+    created = guardrail.issue_and_store_mandate("techbazaar", 5000, 86400, False, owner_customer_id="c777")
+    mandate_id = created["mandate_id"]
+    token = guardrail.get_mandate_token(mandate_id)
+    guardrail.execute_purchase(token, "p001", 4200, requesting_customer_id="c777")
+    assert guardrail.get_mandate_state(mandate_id)["amount_spent_so_far_inr"] == 4200
+
+    orig_create_plan = razorpay_rest.create_plan
+    orig_create_subscription = razorpay_rest.create_subscription
+    razorpay_rest.create_plan = lambda amount_inr, period, interval, name, description=None: {"id": "plan_webhook_1"}
+    razorpay_rest.create_subscription = lambda plan_id, total_count, notes=None, customer_notify=True: {
+        "id": "sub_webhook_1", "status": "created", "short_url": "https://rzp.io/x/webhook1"}
+    try:
+        record = allowance_subscription.create_allowance_subscription(mandate_id, "c777", 5000)
+        assert record["subscription_id"] == "sub_webhook_1"
+
+        new_current_end = int(time.time()) + 30 * 86400
+        body = _subscription_charged_event("sub_webhook_1", paid_count=1, current_end=new_current_end)
+        data = _call_webhook(body, _sign(body))
+        assert data["ok"] is True
+        assert data["refresh_result"]["status"] == "renewed"
+
+        state = guardrail.get_mandate_state(mandate_id)
+        assert state["amount_spent_so_far_inr"] == 0  # allowance refreshed
+        assert state["max_amount_inr"] == 5000  # ceiling itself unchanged
+        assert allowance_subscription.get_allowance_subscription("sub_webhook_1")["last_paid_count"] == 1
+    finally:
+        razorpay_rest.create_plan = orig_create_plan
+        razorpay_rest.create_subscription = orig_create_subscription
+
+
+def test_subscription_charged_webhook_redelivery_does_not_double_renew():
+    from guardrail import razorpay_rest
+    setup()
+    created = guardrail.issue_and_store_mandate("techbazaar", 5000, 86400, False, owner_customer_id="c777")
+    mandate_id = created["mandate_id"]
+
+    orig_create_plan = razorpay_rest.create_plan
+    orig_create_subscription = razorpay_rest.create_subscription
+    razorpay_rest.create_plan = lambda amount_inr, period, interval, name, description=None: {"id": "plan_webhook_2"}
+    razorpay_rest.create_subscription = lambda plan_id, total_count, notes=None, customer_notify=True: {
+        "id": "sub_webhook_2", "status": "created", "short_url": "https://rzp.io/x/webhook2"}
+    try:
+        allowance_subscription.create_allowance_subscription(mandate_id, "c777", 5000)
+        body = _subscription_charged_event("sub_webhook_2", paid_count=1, current_end=int(time.time()) + 30 * 86400)
+        _call_webhook(body, _sign(body))
+        data = _call_webhook(body, _sign(body))  # Razorpay redelivering the exact same event
+        assert data["ok"] is True
+        assert data["refresh_result"]["status"] == "already_processed"
+    finally:
+        razorpay_rest.create_plan = orig_create_plan
+        razorpay_rest.create_subscription = orig_create_subscription
+
+
+def test_subscription_charged_webhook_with_no_local_record_is_ignored():
+    setup()
+    body = _subscription_charged_event("sub_never_registered", paid_count=1, current_end=int(time.time()) + 86400)
+    data = _call_webhook(body, _sign(body))
+    assert data["ok"] is True
+    assert data["refresh_result"]["status"] == "ignored"
+
+
+def test_subscription_status_webhook_updates_local_record():
+    from guardrail import razorpay_rest
+    setup()
+    created = guardrail.issue_and_store_mandate("techbazaar", 5000, 86400, False, owner_customer_id="c777")
+    mandate_id = created["mandate_id"]
+
+    orig_create_plan = razorpay_rest.create_plan
+    orig_create_subscription = razorpay_rest.create_subscription
+    razorpay_rest.create_plan = lambda amount_inr, period, interval, name, description=None: {"id": "plan_webhook_3"}
+    razorpay_rest.create_subscription = lambda plan_id, total_count, notes=None, customer_notify=True: {
+        "id": "sub_webhook_3", "status": "created", "short_url": "https://rzp.io/x/webhook3"}
+    try:
+        allowance_subscription.create_allowance_subscription(mandate_id, "c777", 5000)
+        body = _subscription_status_event("subscription.activated", "sub_webhook_3")
+        data = _call_webhook(body, _sign(body))
+        assert data["ok"] is True
+        assert allowance_subscription.get_allowance_subscription("sub_webhook_3")["status"] == "active"
+    finally:
+        razorpay_rest.create_plan = orig_create_plan
+        razorpay_rest.create_subscription = orig_create_subscription
+
+
+def test_subscription_status_webhook_with_no_local_record_is_a_safe_noop():
+    setup()
+    body = _subscription_status_event("subscription.cancelled", "sub_never_seen")
+    data = _call_webhook(body, _sign(body))
+    assert data["ok"] is True

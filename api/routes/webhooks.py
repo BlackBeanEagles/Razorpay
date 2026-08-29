@@ -17,6 +17,12 @@ notification triggers an AI-drafted evidence response built from this system's o
 saved as a real draft on Razorpay's side -- never auto-submitted, that stays a deliberate admin
 click on the dashboard.
 
+Also handles the subscription.* events (see subscriptions/allowance_subscription.py):
+subscription.charged is the real, bank-confirmed signal that a customer's monthly UPI AutoPay/
+eMandate allowance top-up actually went through -- that, and only that, is what refreshes a
+Guardrail mandate's spend window. Nothing here ever creates a charge; it only reacts to one
+Razorpay's own banking rail already confirmed.
+
 Not accessible from the public internet without a real HTTPS tunnel to this local server (ngrok,
 Razorpay's own CLI forwarding, or a real deployment) -- see README.md for how to actually wire
 this up to a live Razorpay Dashboard webhook subscription and test it end to end.
@@ -33,6 +39,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from guardrail import guardrail
 from audit.audit_log import log_event
 from disputes import dispute_response
+from subscriptions import allowance_subscription
 
 router = APIRouter()
 
@@ -51,7 +58,20 @@ _DISPUTE_STATUS_EVENTS = {
     "payment.dispute.under_review": "under_review", "payment.dispute.action_required": "action_required",
 }
 
-_HANDLED_EVENTS = _PAYMENT_EVENTS | {_DISPUTE_CREATED_EVENT} | set(_DISPUTE_STATUS_EVENTS)
+_SUBSCRIPTION_CHARGED_EVENT = "subscription.charged"
+# Same idea as the dispute status events -- mirrored onto the local record, no action taken,
+# except subscription.charged (handled separately below), which is the one real trigger.
+_SUBSCRIPTION_STATUS_EVENTS = {
+    "subscription.authenticated": "authenticated", "subscription.activated": "active",
+    "subscription.pending": "pending", "subscription.halted": "halted",
+    "subscription.cancelled": "cancelled", "subscription.paused": "paused",
+    "subscription.resumed": "resumed", "subscription.completed": "completed",
+}
+
+_HANDLED_EVENTS = (
+    _PAYMENT_EVENTS | {_DISPUTE_CREATED_EVENT} | set(_DISPUTE_STATUS_EVENTS)
+    | {_SUBSCRIPTION_CHARGED_EVENT} | set(_SUBSCRIPTION_STATUS_EVENTS)
+)
 
 
 def _verify_signature(raw_body: bytes, signature: str) -> bool:
@@ -95,6 +115,10 @@ async def razorpay_webhook(request: Request):
         return _handle_dispute_status_event(event_type, event)
     if event_type == _DISPUTE_CREATED_EVENT:
         return _handle_dispute_created(event)
+    if event_type == _SUBSCRIPTION_CHARGED_EVENT:
+        return _handle_subscription_charged(event)
+    if event_type in _SUBSCRIPTION_STATUS_EVENTS:
+        return _handle_subscription_status_event(event_type, event)
     return _handle_payment_captured(event_type, event)
 
 
@@ -158,3 +182,29 @@ def _handle_dispute_status_event(event_type: str, event: dict) -> dict:
     if updated is None:
         return {"ok": True, "detail": f"No local draft on file for dispute {dispute_id!r} -- status change ignored."}
     return {"ok": True, "detail": f"Dispute {dispute_id} status updated to {new_status!r}."}
+
+
+def _handle_subscription_charged(event: dict) -> dict:
+    entity = event.get("payload", {}).get("subscription", {}).get("entity", {})
+    subscription_id = entity.get("id")
+    if not subscription_id:
+        log_event("subscriptions", "webhook_received", {"event": _SUBSCRIPTION_CHARGED_EVENT}, {"detail": "no subscription id in payload"}, "blocked")
+        return {"ok": False, "detail": "No subscription id in payload."}
+
+    result = allowance_subscription.handle_subscription_charged(
+        subscription_id, paid_count=entity.get("paid_count"), current_end=entity.get("current_end"),
+    )
+    return {"ok": True, "refresh_result": result}
+
+
+def _handle_subscription_status_event(event_type: str, event: dict) -> dict:
+    entity = event.get("payload", {}).get("subscription", {}).get("entity", {})
+    subscription_id = entity.get("id")
+    if not subscription_id:
+        return {"ok": False, "detail": "No subscription id in payload."}
+
+    new_status = _SUBSCRIPTION_STATUS_EVENTS[event_type]
+    updated = allowance_subscription.update_subscription_status(subscription_id, new_status)
+    if updated is None:
+        return {"ok": True, "detail": f"No local allowance-subscription record for {subscription_id!r} -- status change ignored."}
+    return {"ok": True, "detail": f"Subscription {subscription_id} status updated to {new_status!r}."}

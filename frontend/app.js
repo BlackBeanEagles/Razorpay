@@ -830,7 +830,65 @@ async function refreshMandateBox() {
       `${inr(m.amount_spent_so_far_inr)} <span style="font-size:11px;color:var(--text-faint);font-weight:400;">/ ${inr(m.max_amount_inr)} used</span>`;
     box.querySelector(".bar-fill").style.width = pct + "%";
     box.querySelector(".expiry").textContent = m.is_expired ? "expired" : `expires in ${hrs}h ${mins}m`;
+
+    // Auto-refresh via a real, bank-authorized Razorpay Subscription is only offered for a
+    // mandate this customer actually owns -- the shared/demo mandate (m_default, owner null) has
+    // no single customer's bank to register it against.
+    const isOwnMandate = currentCustomer && m.owner_customer_id === currentCustomer.customer_id;
+    await refreshAutoRefreshRow(isOwnMandate ? m.mandate_id : null);
   } catch { /* leave defaults */ }
+}
+
+async function refreshAutoRefreshRow(mandateId) {
+  const row = document.getElementById("autoRefreshRow");
+  if (!mandateId) { row.style.display = "none"; row.innerHTML = ""; return; }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/allowance-subscriptions/for-mandate/${mandateId}`);
+    if (!res.ok) { row.style.display = "none"; return; }
+    const { subscription } = await res.json();
+    row.style.display = "";
+    if (subscription) {
+      const statusLabel = { created: "awaiting bank authorization", active: "active", authenticated: "authorized",
+        pending: "payment retry pending", halted: "halted -- needs attention" }[subscription.status] || subscription.status;
+      row.innerHTML = `<span style="color:var(--text-faint);">Auto-refresh: ${inr(subscription.amount_inr)}/month via UPI AutoPay -- <strong>${escapeHtml(statusLabel)}</strong></span>`;
+      if (subscription.status === "created" && subscription.short_url) {
+        row.innerHTML += ` <a href="${subscription.short_url}" target="_blank" rel="noopener">complete bank authorization &rarr;</a>`;
+      }
+    } else {
+      row.innerHTML = `<a href="#" id="autoRefreshLink">Set up automatic monthly refresh via UPI AutoPay &rarr;</a>`;
+      document.getElementById("autoRefreshLink").addEventListener("click", (e) => {
+        e.preventDefault();
+        setUpAutoRefresh(mandateId);
+      });
+    }
+  } catch { row.style.display = "none"; }
+}
+
+async function setUpAutoRefresh(mandateId) {
+  const amountStr = window.prompt(
+    "Refresh this mandate's allowance by how much each month? This creates a real Razorpay " +
+    "Subscription -- your bank/UPI app will ask you to independently authorize it; TechBazaar " +
+    "never sees or touches your bank details.", "5000",
+  );
+  if (amountStr === null) return;
+  const amount = parseInt(amountStr, 10);
+  if (!amount || amount <= 0) { addMsg("That doesn't look like a valid amount.", "agent"); return; }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/allowance-subscriptions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mandate_id: mandateId, amount_inr: amount }),
+    });
+    const result = await res.json();
+    if (!res.ok) { addMsg(`Couldn't set up auto-refresh: ${result.detail || "unknown error"}`, "agent"); return; }
+    addMsg(`Created a real monthly ${inr(amount)} refresh subscription. Opening Razorpay's checkout so you can authorize it with your bank/UPI app -- nothing refreshes until you complete that.`, "agent");
+    if (result.short_url) window.open(result.short_url, "_blank", "noopener");
+    refreshMandateBox();
+  } catch (err) {
+    addMsg("Couldn't reach the server to set up auto-refresh: " + err.message, "agent");
+  }
 }
 
 /* ---------- Customer signup/login ---------- */
