@@ -10,11 +10,33 @@ from subscriptions import allowance_subscription
 from subscriptions.allowance_subscription import (
     create_allowance_subscription, list_allowance_subscriptions, get_allowance_subscription,
     get_allowance_subscription_for_mandate, update_subscription_status, handle_subscription_charged,
+    send_recovery_link, handle_recovery_payment,
 )
 
 
 def _isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(allowance_subscription, "SUBSCRIPTIONS_PATH", str(tmp_path / "allowance_subscriptions.json"))
+
+
+def _stub_email(monkeypatch, address="customer@example.com"):
+    monkeypatch.setattr(allowance_subscription, "email_for_customer", lambda customer_id: address)
+
+
+def _stub_mailer(monkeypatch, sent=True):
+    calls = []
+    monkeypatch.setattr(allowance_subscription.mailer, "send_email",
+                         lambda to_email, subject, body_text: calls.append((to_email, subject, body_text))
+                         or {"sent": sent, "provider_id": "email_1" if sent else None, "detail": "ok" if sent else "failed"})
+    return calls
+
+
+def _stub_payment_link(monkeypatch, link_id="plink_recovery_1", short_url="https://rzp.io/i/recover1"):
+    calls = []
+    monkeypatch.setattr(allowance_subscription.razorpay_rest, "create_payment_link",
+                         lambda amount_inr, description, notes=None, customer_email=None:
+                         calls.append((amount_inr, description, notes, customer_email))
+                         or {"id": link_id, "short_url": short_url, "status": "created"})
+    return calls
 
 
 _MANDATE_STATE = {
@@ -165,3 +187,136 @@ def test_handle_subscription_charged_when_mandate_no_longer_exists(monkeypatch, 
     assert result["status"] == "mandate_missing"
     assert get_allowance_subscription("sub_1")["last_paid_count"] == 1  # still marked processed
     assert get_allowance_subscription("sub_1")["status"] == "mandate_missing"
+
+
+def _create_test_subscription(monkeypatch, sub_id="sub_recovery_1"):
+    _stub_mandate(monkeypatch)
+    monkeypatch.setattr(allowance_subscription.razorpay_rest, "create_plan", lambda *a, **k: {"id": "plan_recovery_1"})
+    monkeypatch.setattr(allowance_subscription.razorpay_rest, "create_subscription",
+                         lambda *a, **k: {"id": sub_id, "status": "created", "short_url": "https://rzp.io/x/recovery"})
+    return create_allowance_subscription("m_customer_1", "c777", 5000)
+
+
+def test_send_recovery_link_creates_a_real_payment_link_and_emails_it(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _create_test_subscription(monkeypatch)
+    _stub_email(monkeypatch, "customer@example.com")
+    link_calls = _stub_payment_link(monkeypatch)
+    mail_calls = _stub_mailer(monkeypatch)
+
+    result = send_recovery_link("sub_recovery_1")
+    assert result["status"] == "sent"
+    assert result["recovery_link_short_url"] == "https://rzp.io/i/recover1"
+    assert result["email_result"]["sent"] is True
+
+    assert len(link_calls) == 1
+    amount_inr, description, notes, customer_email = link_calls[0]
+    assert amount_inr == 5000
+    assert notes == {"subscription_id": "sub_recovery_1", "mandate_id": "m_customer_1", "purpose": "allowance_recovery"}
+    assert customer_email == "customer@example.com"
+
+    assert len(mail_calls) == 1
+    to_email, subject, body = mail_calls[0]
+    assert to_email == "customer@example.com"
+    assert "https://rzp.io/i/recover1" in body
+
+    record = get_allowance_subscription("sub_recovery_1")
+    assert record["recovery_link_id"] == "plink_recovery_1"
+    assert record["recovery_link_short_url"] == "https://rzp.io/i/recover1"
+    assert record["recovery_email"]["sent"] is True
+
+
+def test_send_recovery_link_unknown_subscription_is_an_error(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    result = send_recovery_link("sub_ghost")
+    assert result["status"] == "error"
+
+
+def test_send_recovery_link_with_no_email_on_file_still_creates_the_link(monkeypatch, tmp_path):
+    # The link itself is real and usable even if we can't notify the customer by email --
+    # reported honestly (sent: False) rather than silently dropped.
+    _isolate(monkeypatch, tmp_path)
+    _create_test_subscription(monkeypatch)
+    _stub_email(monkeypatch, "")
+    link_calls = _stub_payment_link(monkeypatch)
+
+    def fail_if_called(*a, **k):
+        raise AssertionError("mailer.send_email should not be called with no address on file")
+
+    monkeypatch.setattr(allowance_subscription.mailer, "send_email", fail_if_called)
+    result = send_recovery_link("sub_recovery_1")
+    assert result["status"] == "sent"
+    assert result["email_result"]["sent"] is False
+    assert len(link_calls) == 1  # the real payment link is still created either way
+
+
+def test_update_subscription_status_halted_automatically_sends_a_recovery_link(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _create_test_subscription(monkeypatch)
+    _stub_email(monkeypatch)
+    _stub_payment_link(monkeypatch)
+    _stub_mailer(monkeypatch)
+
+    updated = update_subscription_status("sub_recovery_1", "halted")
+    assert updated["status"] == "halted"
+    assert updated["recovery_link_id"] == "plink_recovery_1"  # sent automatically, no separate call needed
+
+
+def test_update_subscription_status_other_statuses_do_not_send_a_recovery_link(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _create_test_subscription(monkeypatch)
+
+    def fail_if_called(*a, **k):
+        raise AssertionError("create_payment_link should not be called for a non-halted status change")
+
+    monkeypatch.setattr(allowance_subscription.razorpay_rest, "create_payment_link", fail_if_called)
+    updated = update_subscription_status("sub_recovery_1", "active")
+    assert updated["status"] == "active"
+    assert updated.get("recovery_link_id") is None
+
+
+def test_handle_recovery_payment_renews_the_mandate(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _create_test_subscription(monkeypatch)
+
+    renew_calls = []
+
+    def fake_renew(mandate_id, new_expires_at):
+        renew_calls.append((mandate_id, new_expires_at))
+        return {**_MANDATE_STATE, "amount_spent_so_far_inr": 0}
+
+    monkeypatch.setattr(allowance_subscription.guardrail, "renew_mandate", fake_renew)
+    result = handle_recovery_payment("sub_recovery_1", "plink_paid_1")
+    assert result["status"] == "recovered"
+    assert renew_calls[0][0] == "m_customer_1"
+    record = get_allowance_subscription("sub_recovery_1")
+    assert record["last_recovery_payment_link_id"] == "plink_paid_1"
+    assert record["status"] == "active"
+
+
+def test_handle_recovery_payment_is_idempotent_against_webhook_redelivery(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _create_test_subscription(monkeypatch)
+
+    calls = []
+    monkeypatch.setattr(allowance_subscription.guardrail, "renew_mandate",
+                         lambda mandate_id, new_expires_at: calls.append(1) or {**_MANDATE_STATE, "amount_spent_so_far_inr": 0})
+    handle_recovery_payment("sub_recovery_1", "plink_paid_1")
+    result = handle_recovery_payment("sub_recovery_1", "plink_paid_1")  # redelivery of the same webhook
+    assert result["status"] == "already_processed"
+    assert len(calls) == 1
+
+
+def test_handle_recovery_payment_with_no_local_record_is_ignored(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    result = handle_recovery_payment("sub_ghost", "plink_paid_1")
+    assert result["status"] == "ignored"
+
+
+def test_handle_recovery_payment_when_mandate_no_longer_exists(monkeypatch, tmp_path):
+    _isolate(monkeypatch, tmp_path)
+    _create_test_subscription(monkeypatch)
+    monkeypatch.setattr(allowance_subscription.guardrail, "renew_mandate", lambda mandate_id, new_expires_at: None)
+    result = handle_recovery_payment("sub_recovery_1", "plink_paid_1")
+    assert result["status"] == "mandate_missing"
+    assert get_allowance_subscription("sub_recovery_1")["last_recovery_payment_link_id"] == "plink_paid_1"

@@ -102,6 +102,13 @@ def _subscription_status_event(event_name: str, subscription_id: str) -> bytes:
     }).encode()
 
 
+def _payment_link_paid_event(payment_link_id: str, notes: dict, amount_paise: int = 500000) -> bytes:
+    return json.dumps({
+        "entity": "event", "event": "payment_link.paid", "contains": ["payment_link", "order", "payment"],
+        "payload": {"payment_link": {"entity": {"id": payment_link_id, "amount": amount_paise, "status": "paid", "notes": notes}}},
+    }).encode()
+
+
 class FakeRequest:
     """Just enough of Starlette's Request interface for the route handler: async body() and a
     dict-like headers object -- same minimal-fake convention as api/test_auth.py's FakeRequest."""
@@ -413,3 +420,86 @@ def test_subscription_status_webhook_with_no_local_record_is_a_safe_noop():
     body = _subscription_status_event("subscription.cancelled", "sub_never_seen")
     data = _call_webhook(body, _sign(body))
     assert data["ok"] is True
+
+
+def _create_test_allowance_subscription(razorpay_rest, mandate_id, plan_id, sub_id):
+    orig_create_plan = razorpay_rest.create_plan
+    orig_create_subscription = razorpay_rest.create_subscription
+    razorpay_rest.create_plan = lambda amount_inr, period, interval, name, description=None: {"id": plan_id}
+    razorpay_rest.create_subscription = lambda plan_id, total_count, notes=None, customer_notify=True: {
+        "id": sub_id, "status": "created", "short_url": f"https://rzp.io/x/{sub_id}"}
+    try:
+        return allowance_subscription.create_allowance_subscription(mandate_id, "c777", 5000)
+    finally:
+        razorpay_rest.create_plan = orig_create_plan
+        razorpay_rest.create_subscription = orig_create_subscription
+
+
+def test_subscription_halted_webhook_sends_a_real_recovery_link():
+    from guardrail import razorpay_rest
+    setup()
+    created = guardrail.issue_and_store_mandate("techbazaar", 5000, 86400, False, owner_customer_id="c777")
+    mandate_id = created["mandate_id"]
+    _create_test_allowance_subscription(razorpay_rest, mandate_id, "plan_halt_1", "sub_halt_1")
+
+    orig_create_link = razorpay_rest.create_payment_link
+    razorpay_rest.create_payment_link = lambda amount_inr, description, notes=None, customer_email=None: {
+        "id": "plink_halt_1", "short_url": "https://rzp.io/i/halt1", "status": "created"}
+    try:
+        body = _subscription_status_event("subscription.halted", "sub_halt_1")
+        data = _call_webhook(body, _sign(body))
+        assert data["ok"] is True
+        record = allowance_subscription.get_allowance_subscription("sub_halt_1")
+        assert record["status"] == "halted"
+        assert record["recovery_link_id"] == "plink_halt_1"  # sent automatically by the halted transition
+    finally:
+        razorpay_rest.create_payment_link = orig_create_link
+
+
+def test_payment_link_paid_webhook_recovers_a_halted_mandate():
+    from guardrail import razorpay_rest
+    setup()
+    created = guardrail.issue_and_store_mandate("techbazaar", 5000, 86400, False, owner_customer_id="c777")
+    mandate_id = created["mandate_id"]
+    token = guardrail.get_mandate_token(mandate_id)
+    guardrail.execute_purchase(token, "p001", 4200, requesting_customer_id="c777")
+    _create_test_allowance_subscription(razorpay_rest, mandate_id, "plan_recover_1", "sub_recover_1")
+
+    body = _payment_link_paid_event(
+        "plink_recover_1",
+        notes={"subscription_id": "sub_recover_1", "mandate_id": mandate_id, "purpose": "allowance_recovery"},
+    )
+    data = _call_webhook(body, _sign(body))
+    assert data["ok"] is True
+    assert data["recovery_result"]["status"] == "recovered"
+
+    state = guardrail.get_mandate_state(mandate_id)
+    assert state["amount_spent_so_far_inr"] == 0  # allowance recovered
+    record = allowance_subscription.get_allowance_subscription("sub_recover_1")
+    assert record["last_recovery_payment_link_id"] == "plink_recover_1"
+    assert record["status"] == "active"
+
+
+def test_payment_link_paid_webhook_ignores_links_not_meant_for_recovery():
+    setup()
+    body = _payment_link_paid_event("plink_unrelated_1", notes={"purpose": "something_else"})
+    data = _call_webhook(body, _sign(body))
+    assert data["ok"] is True
+    assert "recovery_result" not in data
+
+
+def test_payment_link_paid_webhook_redelivery_does_not_double_recover():
+    from guardrail import razorpay_rest
+    setup()
+    created = guardrail.issue_and_store_mandate("techbazaar", 5000, 86400, False, owner_customer_id="c777")
+    mandate_id = created["mandate_id"]
+    _create_test_allowance_subscription(razorpay_rest, mandate_id, "plan_recover_2", "sub_recover_2")
+
+    body = _payment_link_paid_event(
+        "plink_recover_2",
+        notes={"subscription_id": "sub_recover_2", "mandate_id": mandate_id, "purpose": "allowance_recovery"},
+    )
+    _call_webhook(body, _sign(body))
+    data = _call_webhook(body, _sign(body))  # Razorpay redelivering the exact same event
+    assert data["ok"] is True
+    assert data["recovery_result"]["status"] == "already_processed"

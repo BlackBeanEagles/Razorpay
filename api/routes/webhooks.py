@@ -23,6 +23,13 @@ eMandate allowance top-up actually went through -- that, and only that, is what 
 Guardrail mandate's spend window. Nothing here ever creates a charge; it only reacts to one
 Razorpay's own banking rail already confirmed.
 
+Also handles payment_link.paid: the real signal that a customer fixed a halted subscription by
+paying the one-time recovery link send_recovery_link() emailed them (see
+subscriptions/allowance_subscription.py's handle_recovery_payment()). Only acted on when the
+link's own notes identify it as one of ours (purpose="allowance_recovery") -- a merchant could
+have other, unrelated Payment Links in the same Razorpay account, and this handler has no
+business touching those.
+
 Not accessible from the public internet without a real HTTPS tunnel to this local server (ngrok,
 Razorpay's own CLI forwarding, or a real deployment) -- see README.md for how to actually wire
 this up to a live Razorpay Dashboard webhook subscription and test it end to end.
@@ -68,9 +75,11 @@ _SUBSCRIPTION_STATUS_EVENTS = {
     "subscription.resumed": "resumed", "subscription.completed": "completed",
 }
 
+_PAYMENT_LINK_PAID_EVENT = "payment_link.paid"
+
 _HANDLED_EVENTS = (
     _PAYMENT_EVENTS | {_DISPUTE_CREATED_EVENT} | set(_DISPUTE_STATUS_EVENTS)
-    | {_SUBSCRIPTION_CHARGED_EVENT} | set(_SUBSCRIPTION_STATUS_EVENTS)
+    | {_SUBSCRIPTION_CHARGED_EVENT} | set(_SUBSCRIPTION_STATUS_EVENTS) | {_PAYMENT_LINK_PAID_EVENT}
 )
 
 
@@ -119,6 +128,8 @@ async def razorpay_webhook(request: Request):
         return _handle_subscription_charged(event)
     if event_type in _SUBSCRIPTION_STATUS_EVENTS:
         return _handle_subscription_status_event(event_type, event)
+    if event_type == _PAYMENT_LINK_PAID_EVENT:
+        return _handle_payment_link_paid(event)
     return _handle_payment_captured(event_type, event)
 
 
@@ -208,3 +219,18 @@ def _handle_subscription_status_event(event_type: str, event: dict) -> dict:
     if updated is None:
         return {"ok": True, "detail": f"No local allowance-subscription record for {subscription_id!r} -- status change ignored."}
     return {"ok": True, "detail": f"Subscription {subscription_id} status updated to {new_status!r}."}
+
+
+def _handle_payment_link_paid(event: dict) -> dict:
+    entity = event.get("payload", {}).get("payment_link", {}).get("entity", {})
+    payment_link_id = entity.get("id")
+    notes = entity.get("notes") or {}
+    if not isinstance(notes, dict):
+        notes = {}  # Razorpay sends [] instead of {} for an empty notes field on some entities
+
+    if notes.get("purpose") != allowance_subscription.RECOVERY_PURPOSE or not notes.get("subscription_id"):
+        # Not one of ours -- could be any other Payment Link on this Razorpay account.
+        return {"ok": True, "detail": "payment_link.paid not relevant to allowance recovery."}
+
+    result = allowance_subscription.handle_recovery_payment(notes["subscription_id"], payment_link_id)
+    return {"ok": True, "recovery_result": result}

@@ -173,3 +173,25 @@ def accept_dispute(dispute_id: str) -> dict:
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def create_payment_link(amount_inr: float, description: str, notes: dict = None, customer_email: str = None) -> dict:
+    """Creates a real, one-time Razorpay Payment Link (POST /v1/payment_links) -- a hosted
+    checkout page shareable via a plain URL, no order/subscription plumbing required on our side.
+    Used for allowance-subscription recovery (subscriptions/allowance_subscription.py): when a
+    customer's recurring UPI AutoPay top-up fails and Razorpay halts it, this is the real,
+    immediate way to let them fix it without waiting for the next billing cycle. notes carries
+    enough context (subscription_id, mandate_id, purpose) for the payment_link.paid webhook to
+    know what this payment was for without a separate lookup table."""
+    body = {"amount": round(amount_inr * 100), "currency": "INR", "description": description, "notes": notes or {}}
+    if customer_email:
+        body["customer"] = {"email": customer_email}
+        body["notify"] = {"email": True}
+    resp = requests.post(
+        f"{_BASE_URL}/payment_links",
+        auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+        json=body,
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()

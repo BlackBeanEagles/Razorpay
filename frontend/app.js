@@ -1004,7 +1004,7 @@ async function initDashboard() {
     window.location.href = "login.html";
   });
 
-  const [batchResRaw, auditResRaw, aiAgentsResRaw, liveStatsResRaw, supportResRaw, liveCheckResRaw, disputesResRaw] = await Promise.all([
+  const [batchResRaw, auditResRaw, aiAgentsResRaw, liveStatsResRaw, supportResRaw, liveCheckResRaw, disputesResRaw, allowanceResRaw] = await Promise.all([
     fetch(`${API_BASE}/api/batch-results`),
     fetch(`${API_BASE}/api/audit-log?limit=300`),
     fetch(`${API_BASE}/api/ai-agents`),
@@ -1012,13 +1012,14 @@ async function initDashboard() {
     fetch(`${API_BASE}/api/support-requests`),
     fetch(`${API_BASE}/api/reconciliation/live-check`),
     fetch(`${API_BASE}/api/disputes`),
+    fetch(`${API_BASE}/api/admin/allowance-subscriptions`),
   ]);
-  if ([batchResRaw, auditResRaw, aiAgentsResRaw, liveStatsResRaw, supportResRaw, liveCheckResRaw, disputesResRaw].some((r) => r.status === 401)) {
+  if ([batchResRaw, auditResRaw, aiAgentsResRaw, liveStatsResRaw, supportResRaw, liveCheckResRaw, disputesResRaw, allowanceResRaw].some((r) => r.status === 401)) {
     window.location.href = "login.html";
     return;
   }
-  const [batchRes, auditRes, aiAgentsRes, liveStats, supportRes, liveCheckRes, disputesRes] = await Promise.all([
-    batchResRaw.json(), auditResRaw.json(), aiAgentsResRaw.json(), liveStatsResRaw.json(), supportResRaw.json(), liveCheckResRaw.json(), disputesResRaw.json(),
+  const [batchRes, auditRes, aiAgentsRes, liveStats, supportRes, liveCheckRes, disputesRes, allowanceRes] = await Promise.all([
+    batchResRaw.json(), auditResRaw.json(), aiAgentsResRaw.json(), liveStatsResRaw.json(), supportResRaw.json(), liveCheckResRaw.json(), disputesResRaw.json(), allowanceResRaw.json(),
   ]);
 
   // batchRes.reconciliation (rc) is still real, per-record data (which live purchases vs. the
@@ -1214,6 +1215,59 @@ async function initDashboard() {
         } catch (e) {
           btn.disabled = false;
           btn.textContent = "Accept & refund";
+          window.alert("Could not reach the server.");
+        }
+      });
+    });
+  }
+
+  renderAllowanceSubscriptions((allowanceRes && allowanceRes.subscriptions) || []);
+  function renderAllowanceSubscriptions(list) {
+    const summaryEl = document.getElementById("allowanceSummary");
+    const body = document.getElementById("allowanceTableBody");
+    const halted = list.filter((s) => s.status === "halted").length;
+    summaryEl.textContent = `-- ${list.length} total, ${halted} halted`;
+    const statusToPill = {
+      created: "flagged", authenticated: "ok", active: "ok", pending: "flagged",
+      halted: "failed", cancelled: "", paused: "flagged", resumed: "ok", completed: "ok", mandate_missing: "failed",
+    };
+    body.innerHTML = list.length
+      ? list.map((s) => `
+        <tr data-subscription-id="${escapeHtml(s.subscription_id)}">
+          <td>${escapeHtml(s.subscription_id)}</td>
+          <td>${escapeHtml(s.customer_id)}</td>
+          <td>${escapeHtml(s.mandate_id)}</td>
+          <td>${inr(s.amount_inr)}</td>
+          <td><span class="pill ${pillClass(statusToPill[s.status] || "")}">${escapeHtml((s.status || "").replace(/_/g, " "))}</span></td>
+          <td>${s.recovery_link_sent_at
+            ? `<span style="color:var(--text-faint);font-size:11px;">sent ${escapeHtml(s.recovery_link_sent_at.slice(0, 19).replace("T", " "))}${s.recovery_email && !s.recovery_email.sent ? " (email failed)" : ""}</span>`
+            : `<span style="color:var(--text-faint);">none</span>`}</td>
+          <td>${s.status === "halted"
+            ? `<button type="button" class="btn-ghost resend-recovery-btn" data-id="${escapeHtml(s.subscription_id)}" style="padding:3px 9px;font-size:11px;">Resend</button>`
+            : ""}</td>
+        </tr>`).join("")
+      : `<tr><td colspan="7">No allowance subscriptions registered yet.</td></tr>`;
+
+    body.querySelectorAll(".resend-recovery-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        btn.disabled = true;
+        btn.textContent = "...";
+        try {
+          const res = await fetch(`${API_BASE}/api/admin/allowance-subscriptions/${encodeURIComponent(id)}/send-recovery-link`, { method: "POST" });
+          const result = await res.json();
+          if (res.ok && result.status === "sent") {
+            btn.closest("tr").querySelector("td:nth-child(6)").innerHTML = `<span style="color:var(--text-faint);font-size:11px;">sent just now${!result.email_result.sent ? " (email failed)" : ""}</span>`;
+            btn.disabled = false;
+            btn.textContent = "Resend";
+          } else {
+            btn.disabled = false;
+            btn.textContent = "Resend";
+            window.alert(result.detail || "Could not send the recovery link.");
+          }
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = "Resend";
           window.alert("Could not reach the server.");
         }
       });
