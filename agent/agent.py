@@ -48,7 +48,14 @@ def run_chat_turn(message: str, customer_id: str, mandate_id: str) -> dict:
     Razorpay Checkout when real credentials are configured (status "checkout_required" --
     purchase_result stays None, "checkout" carries what the frontend needs to open Checkout;
     the turn finishes for real once the frontend calls /api/purchase/confirm), or completes
-    immediately via the automated mock flow otherwise."""
+    immediately via the automated mock flow otherwise.
+
+    Known gap, deliberately not fixed here: unlike agent/llm_agent.py (which now keeps real
+    per-session conversation memory, see its _SESSION_HISTORY docstring), this deterministic
+    router has no concept of a prior turn at all -- every message is parsed on its own. A
+    follow-up like "add to cart" with no product name in the same message won't resolve here
+    either. Only reachable when GROQ_API_KEY isn't configured (see api/routes/chat.py), so this
+    hasn't been the active path for real chat traffic, but worth knowing before relying on it."""
     trace = []
     product_card = None
     purchase_result = None

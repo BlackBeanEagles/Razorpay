@@ -33,6 +33,38 @@ from agent.groq_client import chat_completion
 
 MAX_TOOL_ITERATIONS = 6
 
+# Per-session conversation memory. Without this, every message started a brand-new conversation
+# with only the system prompt and that one message -- the model had no way to know what "add to
+# cart" or "yes" referred to, even though the system prompt itself explicitly describes handling
+# "a yes/confirmation reply to a product YOU just proposed" (a real, found-via-testing gap
+# between what the prompt assumed and what the code actually gave it). Keyed by customer_id +
+# session_id (the frontend already generates and sends session_id on every message; it just
+# wasn't being used) so one customer's open tabs don't bleed into each other's history and a
+# guessed/reused session_id can't replay a different customer's conversation. In-memory only --
+# resets on server restart, which is an acceptable tradeoff for a hackathon demo, the same one
+# guardrail/mandates.json's file-backed-but-unencrypted store already makes elsewhere.
+_SESSION_HISTORY: dict[str, list] = {}
+_MAX_HISTORY_TURNS = 6  # user+assistant exchanges kept -- bounds both memory and Groq's per-minute token budget
+
+
+def _history_key(customer_id: str, session_id: str) -> str:
+    return f"{customer_id}:{session_id}"
+
+
+def _get_history(customer_id: str, session_id: str) -> list:
+    if not session_id:
+        return []
+    return _SESSION_HISTORY.get(_history_key(customer_id, session_id), [])
+
+
+def _append_history(customer_id: str, session_id: str, user_message: str, agent_reply: str) -> None:
+    if not session_id:
+        return
+    history = _SESSION_HISTORY.setdefault(_history_key(customer_id, session_id), [])
+    history.append({"role": "user", "content": user_message})
+    history.append({"role": "assistant", "content": agent_reply})
+    del history[:-_MAX_HISTORY_TURNS * 2]  # keep only the most recent N exchanges
+
 SYSTEM_PROMPT = """You are the Guardrail shopping agent for TechBazaar, a test-mode e-commerce store. You're helpful and personable, not robotic -- talk like a sharp, honest salesperson who'd rather lose a sale than mislead someone, not like a form printing out tool results.
 
 You have seven tools. First decide whether the message is BROWSING, an explicit BUY, or a NEGOTIATE:
@@ -232,15 +264,20 @@ def _execute_tool(name: str, args: dict, customer_id: str, mandate_id: str):
     return {"error": f"Unknown tool: {name}"}, None
 
 
-def run_chat_turn_llm_stream(message: str, customer_id: str, mandate_id: str):
+def run_chat_turn_llm_stream(message: str, customer_id: str, mandate_id: str, session_id: str = None):
     """Generator yielding {"type": "stage", ...} events as tools complete, then one final
     {"type": "final", "agent_reply", "pipeline_trace", "product_card", "purchase_result",
     "purchase_results"}. purchase_results is the full list, in order, for multi-item turns
     ("earbuds and a phone case") -- purchase_result is kept as just the LAST one for simple
     single-item callers, but a caller rendering a result card per item should use
-    purchase_results, not purchase_result, or every item but the last is silently invisible."""
+    purchase_results, not purchase_result, or every item but the last is silently invisible.
+
+    session_id (optional) is what actually gives this turn access to earlier ones in the same
+    conversation -- see _SESSION_HISTORY's docstring above. Without it (e.g. a caller that
+    genuinely wants a one-shot, context-free turn), this behaves exactly as before."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
+        *_get_history(customer_id, session_id),
         {"role": "user", "content": message},
     ]
     trace = []
@@ -270,7 +307,9 @@ def run_chat_turn_llm_stream(message: str, customer_id: str, mandate_id: str):
         tool_calls = choice.get("tool_calls")
 
         if not tool_calls:
-            yield {"type": "final", "agent_reply": choice.get("content") or "I'm not sure how to help with that.",
+            reply = choice.get("content") or "I'm not sure how to help with that."
+            _append_history(customer_id, session_id, message, reply)
+            yield {"type": "final", "agent_reply": reply,
                    "pipeline_trace": trace, "product_card": product_card,
                    "purchase_result": purchase_results[-1] if purchase_results else None,
                    "purchase_results": purchase_results}
@@ -304,9 +343,12 @@ def run_chat_turn_llm_stream(message: str, customer_id: str, mandate_id: str):
                             elif ev["stage"] == "guardrail" and ev["status"] == "success":
                                 earlier_notes.append(f"(also: bought {ev['detail'].get('product_id')} successfully)")
                         prefix = " ".join(earlier_notes) + " " if earlier_notes else ""
-                        yield {"type": "checkout", "agent_reply":
-                               f"{prefix}Found {product_card['name'] if product_card else 'your item'} within your mandate -- "
-                               "complete payment via Razorpay to finish the purchase.",
+                        checkout_reply = (
+                            f"{prefix}Found {product_card['name'] if product_card else 'your item'} within your mandate -- "
+                            "complete payment via Razorpay to finish the purchase."
+                        )
+                        _append_history(customer_id, session_id, message, checkout_reply)
+                        yield {"type": "checkout", "agent_reply": checkout_reply,
                                "checkout": result["checkout"], "pipeline_trace": trace,
                                "purchase_results": purchase_results}
                         return
@@ -314,17 +356,19 @@ def run_chat_turn_llm_stream(message: str, customer_id: str, mandate_id: str):
 
             messages.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result, default=str)})
 
-    yield {"type": "final", "agent_reply": "I wasn't able to finish this within a reasonable number of steps -- please try rephrasing.",
+    exhausted_reply = "I wasn't able to finish this within a reasonable number of steps -- please try rephrasing."
+    _append_history(customer_id, session_id, message, exhausted_reply)
+    yield {"type": "final", "agent_reply": exhausted_reply,
            "pipeline_trace": trace, "product_card": product_card,
            "purchase_result": purchase_results[-1] if purchase_results else None,
            "purchase_results": purchase_results}
 
 
-def run_chat_turn_llm(message: str, customer_id: str, mandate_id: str) -> dict:
+def run_chat_turn_llm(message: str, customer_id: str, mandate_id: str, session_id: str = None) -> dict:
     """Non-streaming convenience wrapper: runs the generator to completion, returns the
     terminal event (either "final" or "checkout")."""
     terminal = None
-    for event in run_chat_turn_llm_stream(message, customer_id, mandate_id):
+    for event in run_chat_turn_llm_stream(message, customer_id, mandate_id, session_id):
         if event["type"] in ("final", "checkout"):
             terminal = event
     terminal.pop("type", None)

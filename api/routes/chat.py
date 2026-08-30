@@ -18,7 +18,8 @@ from pydantic import BaseModel
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from agent.agent import run_chat_turn, run_chat_turn_stream
-from agent.llm_agent import LLM_AVAILABLE, run_chat_turn_llm, run_chat_turn_llm_stream
+from agent.llm_agent import run_chat_turn_llm, run_chat_turn_llm_stream
+from agent.groq_client import LLM_AVAILABLE
 from api.customer_auth import require_customer
 
 router = APIRouter()
@@ -33,16 +34,18 @@ class ChatRequest(BaseModel):
 @router.post("/api/chat")
 def chat(body: ChatRequest, customer_id: str = Depends(require_customer)):
     if LLM_AVAILABLE:
-        return run_chat_turn_llm(body.message, customer_id, body.mandate_id)
+        return run_chat_turn_llm(body.message, customer_id, body.mandate_id, body.session_id)
     return run_chat_turn(body.message, customer_id, body.mandate_id)
 
 
 @router.post("/api/chat/stream")
 def chat_stream(body: ChatRequest, customer_id: str = Depends(require_customer)):
-    stream_fn = run_chat_turn_llm_stream if LLM_AVAILABLE else run_chat_turn_stream
-
     def event_source():
-        for event in stream_fn(body.message, customer_id, body.mandate_id):
+        if LLM_AVAILABLE:
+            stream = run_chat_turn_llm_stream(body.message, customer_id, body.mandate_id, body.session_id)
+        else:
+            stream = run_chat_turn_stream(body.message, customer_id, body.mandate_id)
+        for event in stream:
             yield f"data: {json.dumps(event, default=str)}\n\n"
 
     return StreamingResponse(event_source(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
