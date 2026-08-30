@@ -1220,6 +1220,57 @@ async function initDashboard() {
     });
   }
 
+  document.getElementById("bankStatementBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("bankStatementBtn");
+    const body = document.getElementById("bankStatementTableBody");
+    const summaryEl = document.getElementById("bankStatementSummary");
+    const text = document.getElementById("bankStatementInput").value;
+    if (!text.trim()) return;
+    btn.disabled = true;
+    btn.textContent = "Reconciling...";
+    try {
+      const res = await fetch(`${API_BASE}/api/reconciliation/bank-statement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ statement_text: text }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.parsed) {
+        summaryEl.textContent = "-- unavailable";
+        body.innerHTML = `<tr><td colspan="3">${escapeHtml(result.detail || "Could not reconcile the statement.")}</td></tr>`;
+        return;
+      }
+      summaryEl.textContent = `-- ${result.total_statement_lines} statement line(s), ${result.total_ledger_entries} real order(s), ${result.matched.length} matched`;
+      const rows = [
+        ...result.matched.map((m) => `
+          <tr>
+            <td>${escapeHtml(m.statement_line.narration || "")} <span style="color:var(--text-faint);">(${inr(m.statement_line.amount_inr)})</span></td>
+            <td><span class="pill ok">matched</span></td>
+            <td>Order ${escapeHtml(m.ledger_order_id)}</td>
+          </tr>`),
+        ...result.unmatched_statement_lines.map((line) => `
+          <tr>
+            <td>${escapeHtml(line.narration || "")} <span style="color:var(--text-faint);">(${inr(line.amount_inr)})</span></td>
+            <td><span class="pill flagged">no matching order</span></td>
+            <td>Money in the statement with no corresponding order in our ledger.</td>
+          </tr>`),
+        ...result.unmatched_ledger_entries.map((e) => `
+          <tr>
+            <td>Order ${escapeHtml(e.order_id)} <span style="color:var(--text-faint);">(${inr(e.expected_amount_inr)})</span></td>
+            <td><span class="pill failed">not in statement</span></td>
+            <td>Expected in the bank statement but not found -- pending settlement, or worth investigating.</td>
+          </tr>`),
+      ];
+      body.innerHTML = rows.length ? rows.join("") : `<tr><td colspan="3">Nothing to reconcile.</td></tr>`;
+    } catch (e) {
+      summaryEl.textContent = "-- unavailable";
+      body.innerHTML = `<tr><td colspan="3">Could not reach the server.</td></tr>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Reconcile";
+    }
+  });
+
   function renderAuditTable(entries, filterLabel) {
     const body = document.getElementById("auditTableBody");
     body.innerHTML = entries.length

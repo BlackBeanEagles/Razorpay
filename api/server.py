@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from api.routes import allowance_subscriptions, audit, auth, catalog, chat, customer_auth, disputes, live_verification, mandates, purchase, settlement_qa, support, webhooks
+from api.routes import allowance_subscriptions, audit, auth, bank_statement, catalog, chat, customer_auth, disputes, live_verification, mandates, purchase, settlement_qa, support, webhooks
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
 
@@ -47,6 +47,7 @@ app.include_router(settlement_qa.router)
 app.include_router(live_verification.router)
 app.include_router(disputes.router)
 app.include_router(allowance_subscriptions.router)
+app.include_router(bank_statement.router)
 app.include_router(support.router)
 app.include_router(webhooks.router)
 

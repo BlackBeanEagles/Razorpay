@@ -56,6 +56,19 @@
   </div>
 
   <div class="panel">
+    <div class="panel-head">Bank statement cross-check <span id="bankStatementSummary" style="font-weight:400;color:var(--text-dim);"></span></div>
+    <div style="padding:0 2px 8px;color:var(--text-dim);font-size:12.5px;">A third reconciliation source, independent of both this app's ledger and Razorpay's own API: paste real bank statement lines (CSV or copy-pasted text) and an AI agent extracts transactions, matched against the real ledger by amount and date -- not UTR, since test mode never generates a real one on our side.</div>
+    <textarea id="bankStatementInput" placeholder="Paste bank statement lines here, e.g.:&#10;01-08-2026  UPI/pay_xyz/TechBazaar  500.00&#10;02-08-2026  UPI/pay_abc/TechBazaar  1799.00" style="width:100%;min-height:70px;box-sizing:border-box;font:inherit;font-size:12.5px;padding:8px;border:1px solid var(--border);border-radius:8px;resize:vertical;"></textarea>
+    <div style="margin:6px 0 10px;"><button type="button" id="bankStatementBtn" class="btn-ghost" style="padding:5px 12px;font-size:12px;">Reconcile</button></div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Line / Order</th><th>Status</th><th>Detail</th></tr></thead>
+        <tbody id="bankStatementTableBody"><tr><td colspan="3">Paste a statement above and click Reconcile.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
     <div class="panel-head">Disputes &amp; chargebacks <span id="disputesSummary" style="font-weight:400;color:var(--text-dim);"></span></div>
     <div style="padding:0 2px 8px;color:var(--text-dim);font-size:12.5px;">When a customer's bank raises a chargeback, evidence is drafted automatically from this system's own real audit trail (the order's Guardrail verification and Parity fairness check) and saved as a draft on Razorpay's side -- nothing is ever submitted or accepted without an explicit click here.</div>
     <div class="scroll">
