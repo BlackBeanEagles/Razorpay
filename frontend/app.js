@@ -575,6 +575,25 @@ async function streamChat(message, onStage, onFinal, onCheckout, onError) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+
+  const dispatch = (part) => {
+    const line = part.trim();
+    if (!line.startsWith("data:")) return true;
+    let event;
+    try {
+      event = JSON.parse(line.slice(5).trim());
+    } catch (err) {
+      // An unparseable chunk must not strand the caller waiting forever on a promise that
+      // never settles -- surface it and stop reading rather than throwing out of this loop.
+      onError(`Received a malformed response from the server (${err.message}).`);
+      return false;
+    }
+    if (event.type === "stage") onStage(event);
+    else if (event.type === "final") onFinal(event);
+    else if (event.type === "checkout") onCheckout(event);
+    return true;
+  };
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -582,22 +601,16 @@ async function streamChat(message, onStage, onFinal, onCheckout, onError) {
     const parts = buffer.split("\n\n");
     buffer = parts.pop(); // last part may be incomplete, keep it for the next chunk
     for (const part of parts) {
-      const line = part.trim();
-      if (!line.startsWith("data:")) continue;
-      let event;
-      try {
-        event = JSON.parse(line.slice(5).trim());
-      } catch (err) {
-        // An unparseable chunk must not strand the caller waiting forever on a promise that
-        // never settles -- surface it and stop reading rather than throwing out of this loop.
-        onError(`Received a malformed response from the server (${err.message}).`);
-        return;
-      }
-      if (event.type === "stage") onStage(event);
-      else if (event.type === "final") onFinal(event);
-      else if (event.type === "checkout") onCheckout(event);
+      if (!dispatch(part)) return;
     }
   }
+  // The terminal event (checkout_required especially -- the backend returns immediately after
+  // yielding it, with nothing after) can be the last thing the server ever sends, with no
+  // further chunk to trigger the "\n\n" split above. Without this, that event sits stranded in
+  // `buffer` forever: the loop exits on `done` before ever re-checking it, so onCheckout/onFinal
+  // never fires and the UI looks like the request silently did nothing -- found the hard way,
+  // this is exactly what made a real checkout_required response never render its payment card.
+  if (buffer.trim()) dispatch(buffer);
 }
 
 async function runTurn(message, { showUserBubble = true } = {}) {
