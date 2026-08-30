@@ -52,6 +52,14 @@ flowchart TB
     Allowance -->|"POST /v1/plans, /v1/subscriptions"| Razorpay
     Razorpay -->|"subscription.charged webhook\n(bank-confirmed)"| Allowance
     Allowance -->|renew_mandate: reset spend, move expiry| Guardrail
+    Razorpay -->|"subscription.halted webhook"| Allowance
+    Allowance -->|"auto: real Payment Link + email"| Recovery["Recovery\nsend_recovery_link()"]
+    Recovery -->|POST /v1/payment_links| Razorpay
+    Razorpay -->|payment_link.paid webhook| Allowance
+
+    Dashboard -->|"admin pastes bank statement"| BankStatement["Bank statement cross-check\nGroq-extracted vs. real ledger"]
+    Ledger --> BankStatement
+    BankStatement --> Dashboard
 ```
 
 The single most important property of this design: **every entry point — the storefront's own chat, and an external AI buyer over MCP — calls the exact same `search_catalog` / `check_price_fairness` / `execute_purchase` functions.** There is no separate, weaker code path for external agents. An AI buyer gets no shortcut around mandate enforcement, fairness checks, or verification.
@@ -151,6 +159,20 @@ The mechanism: `guardrail.renew_mandate(mandate_id, new_expires_at)` resets the 
 
 Verified live, not just unit-tested: `subscriptions/_demo_allowance_subscription.py` creates a real mandate, a real Plan and Subscription against Razorpay's actual test-mode API (visible in the real Dashboard), then POSTs a real signed `subscription.charged` webhook to a running server -- and the mandate's spend counter genuinely resets to 0 as an observed, not simulated, result. Also exercised end-to-end through the real customer-authenticated storefront UI (a logged-in customer's "Set up automatic monthly refresh" flow, verified live).
 
+### Recovery — an autonomous nudge when the bank rail itself gives up
+
+Razorpay's own Agent Studio names a "Subscription Recovery" agent that "analyzes failed subscription payments, applies smarter retry logic, and triggers targeted customer nudges." Razorpay already does the retrying on our behalf (that's what the `pending` -> `halted` lifecycle *is*); what was missing was the nudge. When `_handle_subscription_status_event` sees a real `subscription.halted` webhook -- Razorpay has genuinely exhausted its own retries -- `update_subscription_status()` calls `send_recovery_link()` automatically, no admin click required. That's a deliberate exception to this project's own "never auto-act on anything irreversible" rule: sending an email is neither destructive nor irreversible (unlike a refund or a submitted dispute), the same reasoning that already lets a support request's confirmation email send itself elsewhere in this codebase.
+
+`send_recovery_link()` calls the real, self-serve `POST /v1/payment_links` API for exactly the halted subscription's monthly amount, and emails the real `short_url` via Resend. A real `payment_link.paid` webhook (`_handle_payment_link_paid`, matched via the link's own `notes.purpose == "allowance_recovery"` so an unrelated Payment Link on the same account is never mistaken for one of ours) then renews the mandate through `handle_recovery_payment()` -- the same shape as `handle_subscription_charged`, just anchored to a flat 30-day window instead of a real `current_end`, since a one-time Payment Link has no billing cycle to read one from. Idempotent against webhook redelivery via `payment_link_id`, proven directly in `api/test_webhooks.py`. The dashboard's "Allowance subscriptions" panel shows every subscription's real status and recovery history, with a manual "Resend" action for when a customer says the email never arrived.
+
+## Bank statement cross-check — a third reconciliation source
+
+Every reconciliation check so far compares two sources this app already controls: its own ledger, and Razorpay's own API. Razorpay's own Agentic Platform names the actually-realistic finance-ops gap this leaves: "Intelligent Reconciliation" -- upload a screenshot of your bank statement, an agent extracts UTR numbers and amounts and cross-references them against Razorpay records. The bank statement is the ground truth a founder actually reconciles against; neither the ledger-vs-ledger check nor live-verification can see it.
+
+`reconciliation/bank_statement.py` builds this scoped to what's realistic without OCR: an admin pastes bank statement text (CSV rows or copy-pasted lines) into the dashboard, and `parse_bank_statement()` extracts structured transactions via a **forced** Groq tool call (`tool_choice` pinned to `record_transactions`, not `"auto"`) -- the same reliability reasoning behind every other structured extraction in this codebase: a tool call's arguments are valid JSON by construction, so there's no brittle "hope the model's free text parses" step.
+
+Matching is honestly scoped too: test mode generates no real bank settlement cycle at all (see `guardrail/razorpay_mcp_client.py`'s docstring), so there is no real UTR on our side to match against, ever. `match_statement_to_ledger()` matches by amount (within a small tolerance) and date proximity instead -- a real fallback finance teams already reach for when UTR data isn't reliably available on both sides, not a workaround invented for this demo. Greedy, first-fit matching means a duplicate line in the statement correctly shows up as unmatched rather than silently double-counting the same real order. A live-mode account gets exact UTR matching for free, since Razorpay's own real settlement records carry one.
+
 ## Disputes — AI-drafted chargeback evidence from the real audit trail
 
 Reconciliation and live verification both defend against *this system's own* records being wrong. `disputes/dispute_response.py` defends against a different, harder case: a customer's bank disputing a payment that was, in fact, legitimate. Razorpay's real Disputes API (`GET /v1/disputes`, `PATCH /v1/disputes/:id/contest`, `POST /v1/disputes/:id/accept`) is plain self-serve test-mode REST — unlike Route, Payouts, Recurring Payments, or Magic Checkout, none of which are usable without Razorpay approving an on-demand activation request first.
@@ -215,6 +237,8 @@ TechBazaar targets a mix of **Track 1 (AI Growth & Agentic Commerce)** and **Tra
 | Settlement Q&A agent | `reconciliation/settlement_qa.py` — a second Track 4 example direction, built alongside the batch report rather than instead of it. |
 | Detect *and* fix, not just detect | `reconciliation/live_verification.py` — re-verifies real purchases against Razorpay's own current record (not just this app's own files) and, for the one exception type that's unambiguous (`overcharge_drift`), lets an admin issue a real, re-verified-before-acting refund for exactly the difference in one click, closing the loop from "we found a discrepancy" to "it's fixed" rather than stopping at detection. |
 | Defend, not just detect | `disputes/dispute_response.py` — a real chargeback webhook gets a real AI-drafted evidence response, built from this system's own verified audit trail and saved as a real draft on Razorpay's side, with submission/acceptance always a deliberate, confirmed admin click. A materially harder finance-ops problem than reconciliation alone, using an unrestricted, self-serve real Razorpay API. |
+| A third, independent source of truth | `reconciliation/bank_statement.py` — reconciles against the merchant's actual bank statement, not just this app's own ledger and Razorpay's own API. Directly answers Track 4's own "throughput plus measured accuracy" bar with a source neither of the other two checks can see. |
+| Autonomous recovery, not just detection | `subscriptions/allowance_subscription.py`'s `send_recovery_link()` — when Razorpay's own retries are exhausted, a real one-time Payment Link is generated and emailed automatically, closing the loop from "a real charge failed" to "the customer already has a working fix in their inbox," the same shape as Razorpay's own named "Subscription Recovery" agent. |
 
 ### What's honestly still open
 
