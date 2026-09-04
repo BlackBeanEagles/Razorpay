@@ -12,6 +12,7 @@ needed fair band if they don't qualify for one) -- the merchant agent never conc
 fairness rules just to close a deal, and never haggles forever (MAX_ROUNDS caps it, same "gated"
 principle as everything else in this codebase).
 """
+import json
 import math
 import os
 import sys
@@ -19,8 +20,68 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from parity.parity import check_price_fairness, get_baseline_and_factor, DEVIATION_THRESHOLD
 from audit.audit_log import log_event
+from api.file_lock import file_lock
 
 MAX_ROUNDS = 3
+
+_ROUNDS_PATH = os.path.join(os.path.dirname(__file__), "negotiation_rounds.json")
+_ROUNDS_LOCK_PATH = _ROUNDS_PATH + ".lock"
+
+
+def _round_key(product_id: str, customer_id: str) -> str:
+    return f"{product_id}|{customer_id}"
+
+
+def _load_rounds() -> dict:
+    try:
+        with open(_ROUNDS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_rounds(store: dict) -> None:
+    tmp_path = f"{_ROUNDS_PATH}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(store, f, indent=2)
+    os.replace(tmp_path, _ROUNDS_PATH)
+
+
+def _reserve_round(product_id: str, customer_id: str, caller_round_number: int) -> int:
+    """Returns the round number to actually enforce MAX_ROUNDS against. This closes a real gap
+    where caller_round_number alone (an ordinary function argument, not authenticated state) was
+    the ONLY thing enforcing "never haggles forever": a caller that always sends round_number=1
+    got a fresh, uncapped counter/reject computation -- with its own file reads (pricing log,
+    customer profiles, catalog) -- every single call, forever.
+
+    Tracks a persistent per-(product_id, customer_id) attempt count, incremented on every call,
+    reset to 0 whenever the PREVIOUS call for that same key ended the negotiation (see
+    _mark_resolved) -- so a genuinely new negotiation for the same pair still gets a fresh
+    MAX_ROUNDS budget, exactly like before this existed. The round enforced is
+    max(caller_round_number, server_tracked_count): an honest caller's own round_number is still
+    respected (still enough on its own to trigger an early reject), but an adversarial caller
+    that keeps re-sending round_number=1 mid-negotiation can no longer dodge the cap that way."""
+    key = _round_key(product_id, customer_id)
+    with file_lock(_ROUNDS_LOCK_PATH):
+        store = _load_rounds()
+        record = store.get(key)
+        prior_count = record["count"] if record and not record.get("resolved", True) else 0
+        new_count = prior_count + 1
+        store[key] = {"count": new_count, "resolved": False}
+        _save_rounds(store)
+    return max(caller_round_number, new_count)
+
+
+def _mark_resolved(product_id: str, customer_id: str) -> None:
+    """Called once propose_price has decided this call's verdict is "accept" or "reject" (the
+    negotiation is over) -- the next call for this same (product_id, customer_id) pair should
+    start a fresh MAX_ROUNDS budget rather than inheriting this one's count."""
+    key = _round_key(product_id, customer_id)
+    with file_lock(_ROUNDS_LOCK_PATH):
+        store = _load_rounds()
+        if key in store:
+            store[key]["resolved"] = True
+            _save_rounds(store)
 
 
 def _floor_price(product_id: str, customer_id: str):
@@ -46,12 +107,18 @@ def propose_price(product_id: str, offered_price_inr: float, customer_id: str, r
       continue, incrementing round_number.
     verdict "reject": negotiation is over -- either MAX_ROUNDS was reached with no agreement, or
       there's no pricing baseline at all to negotiate against."""
+    # The round actually enforced below is server-tracked, not just whatever round_number the
+    # caller happened to send -- see _reserve_round's docstring for why trusting the caller's
+    # own count alone let "never haggles forever" be dodged by a caller that just kept resending
+    # round_number=1.
+    round_number = _reserve_round(product_id, customer_id, round_number)
     log_input = {"product_id": product_id, "customer_id": customer_id, "offered_price_inr": offered_price_inr, "round": round_number}
 
     if round_number > MAX_ROUNDS:
         result = {"verdict": "reject", "round": round_number,
                    "reason": f"Negotiation ended after {MAX_ROUNDS} rounds without an agreement."}
         log_event("negotiation", "propose_price", log_input, result, "blocked")
+        _mark_resolved(product_id, customer_id)
         return result
 
     fairness = check_price_fairness(product_id, customer_id, offered_price_inr)
@@ -59,6 +126,7 @@ def propose_price(product_id: str, offered_price_inr: float, customer_id: str, r
         result = {"verdict": "accept", "agreed_price_inr": offered_price_inr, "round": round_number,
                    "reason": f"Offer accepted -- {fairness['reason']}"}
         log_event("negotiation", "propose_price", log_input, result, "ok")
+        _mark_resolved(product_id, customer_id)
         return result
 
     floor, baseline = _floor_price(product_id, customer_id)
@@ -69,6 +137,7 @@ def propose_price(product_id: str, offered_price_inr: float, customer_id: str, r
         result = {"verdict": "accept", "agreed_price_inr": offered_price_inr, "round": round_number,
                    "reason": "No pricing baseline exists for this product -- accepted as offered."}
         log_event("negotiation", "propose_price", log_input, result, "ok")
+        _mark_resolved(product_id, customer_id)
         return result
 
     if offered_price_inr >= floor:
@@ -77,6 +146,7 @@ def propose_price(product_id: str, offered_price_inr: float, customer_id: str, r
         result = {"verdict": "accept", "agreed_price_inr": offered_price_inr, "round": round_number,
                    "reason": "Offer is already at or above our floor price."}
         log_event("negotiation", "propose_price", log_input, result, "ok")
+        _mark_resolved(product_id, customer_id)
         return result
 
     # Rounded UP, not to nearest -- rounding a fractional floor DOWN (e.g. 1543.025 -> 1543)
