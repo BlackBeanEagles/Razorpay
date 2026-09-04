@@ -226,6 +226,16 @@ def _execute_tool(name: str, args: dict, customer_id: str, mandate_id: str):
         except KeyError:
             result = {"status": "blocked", "razorpay_order_id": None, "verification": None, "reason": f"Unknown mandate_id: {mandate_id}"}
             return result, {"stage": "guardrail", "status": "blocked", "detail": result}
+        # Enforced here in code, not just asked of the model via the system prompt: the prompt
+        # tells the LLM to call check_price_fairness before execute_purchase, but a model that
+        # skips a step (or a prompt-injected turn trying to jump straight to buying) shouldn't
+        # be the only thing standing between a flagged price and a real purchase. Re-checked
+        # regardless of whether check_price_fairness was already called this turn.
+        fairness = check_price_fairness(args["product_id"], customer_id, args["amount_inr"])
+        if fairness["verdict"] == "flagged":
+            result = {"status": "blocked", "razorpay_order_id": None, "verification": None,
+                       "reason": f"Price fairness check failed, purchase not attempted: {fairness['reason']}"}
+            return result, {"stage": "guardrail", "status": "blocked", "detail": result}
         # resolve_purchase hands off to real, human-verified Razorpay Checkout when real
         # credentials are configured (status "checkout_required"), else completes immediately
         # via the automated mock flow -- see guardrail.py's docstring on resolve_purchase.
