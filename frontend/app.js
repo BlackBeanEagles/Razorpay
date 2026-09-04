@@ -842,6 +842,10 @@ async function offerUpsell(productId) {
 
 async function refreshMandateBox() {
   const box = document.getElementById("mandateBox");
+  // /api/mandates/* requires an authenticated customer -- an anonymous visitor would always get
+  // a 401 here (harmless, already caught below, but a guaranteed-to-fail request logged as a
+  // red error in the browser console on every single page load is worth just not making).
+  if (!currentCustomer) return;
   try {
     const res = await fetch(`${API_BASE}/api/mandates/${activeMandateId}`);
     if (!res.ok) return;
