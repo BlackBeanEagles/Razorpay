@@ -370,14 +370,26 @@ def _clear_pending_purchase(razorpay_order_id: str) -> None:
             _save_pending_purchases(data)
 
 
-def _ledger_entry_for_successful_order(razorpay_order_id: str) -> dict | None:
+def _ledger_entry_for_successful_order(razorpay_order_id: str, requesting_customer_id: str = None) -> dict | None:
     """Finds a prior ledger entry that already recorded this exact order as successfully
     verified -- used to make confirm_purchase idempotent. Without this, confirming the same
     razorpay_order_id twice (a double form-submit, or a page reload after success) would apply
-    spend against the mandate a second time for one real payment that only happened once."""
+    spend against the mandate a second time for one real payment that only happened once.
+
+    Ownership-scoped: a match must belong to the same requesting_customer_id asking now (every
+    production caller supplies one -- the authenticated customer's own session, an AI buyer's
+    own id, or the webhook's locally-tracked pending-purchase owner). Without this check, this
+    idempotency fast-path would let a different customer who merely knows or guesses a real
+    razorpay_order_id retrieve another customer's real verification data (amount charged/
+    settled) without ever passing a mandate-ownership check. requesting_customer_id=None matches
+    unconditionally, same as before this check existed -- there's no production caller that
+    omits it, but internal/test code that genuinely has no customer to scope by still works."""
     for entry in _load_ledger():
-        if entry.get("razorpay_order_id") == razorpay_order_id and entry.get("status") == "success":
-            return entry
+        if entry.get("razorpay_order_id") != razorpay_order_id or entry.get("status") != "success":
+            continue
+        if requesting_customer_id is not None and entry.get("requesting_customer_id") != requesting_customer_id:
+            continue
+        return entry
     return None
 
 
@@ -447,7 +459,7 @@ def _atomic_confirm_and_reserve(razorpay_order_id: str, mandate_id: str, product
     lock -- safe, since no spend was ever reserved in that branch, so there's nothing to
     double-count)."""
     with _mandate_store_lock():
-        already = _ledger_entry_for_successful_order(razorpay_order_id)
+        already = _ledger_entry_for_successful_order(razorpay_order_id, requesting_customer_id)
         if already is not None:
             return already, None
 
@@ -668,7 +680,7 @@ def confirm_purchase(mandate_id: str, product_id: str, amount_inr: int, razorpay
     Independently re-checks the mandate (spend could have moved since initiate_purchase) and
     asks Razorpay itself what actually got captured against this order -- never trusts the
     frontend's say-so that payment succeeded."""
-    already = _ledger_entry_for_successful_order(razorpay_order_id)
+    already = _ledger_entry_for_successful_order(razorpay_order_id, requesting_customer_id)
     if already is not None:
         # This exact order was already confirmed and counted once -- a double form-submit or
         # a page reload after success must not apply spend against the mandate a second time
