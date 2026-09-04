@@ -26,6 +26,7 @@ an MCP client like Claude Desktop or another agent framework spawns and talks to
 """
 import json
 import os
+import secrets
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -69,12 +70,14 @@ def register_ai_buyer(name: str) -> dict:
     with file_lock(_PROFILES_LOCK_PATH):
         with open(CUSTOMER_PROFILES_PATH, encoding="utf-8") as f:
             profiles = json.load(f)
-        existing_ai_ids = [
-            int(p["customer_id"].split("_")[-1]) for p in profiles
-            if p["customer_id"].startswith("ai_buyer_") and p["customer_id"].split("_")[-1].isdigit()
-        ]
-        next_num = max(existing_ai_ids, default=0) + 1
-        ai_buyer_id = f"ai_buyer_{next_num:03d}"
+        # Random, not sequential ("ai_buyer_001", "ai_buyer_002", ...) -- every MCP tool that
+        # takes an ai_buyer_id (check_price_fairness, get_upsell_suggestions, etc.) has no
+        # session/auth layer behind it at all, so the id itself is the only thing standing
+        # between "prove you're this buyer" and "just guess a plausible-looking one". A
+        # sequential id lets any caller enumerate every registered buyer and probe their
+        # loyalty-tier/discount data without ever having registered as them; secrets.token_hex
+        # makes that infeasible to guess while still being trivially unique.
+        ai_buyer_id = f"ai_buyer_{secrets.token_hex(8)}"
         profiles.append({
             "customer_id": ai_buyer_id, "loyalty_tier": "none", "is_first_time": True,
             "typical_order_size": "single", "display_name": name, "is_ai_buyer": True,
