@@ -264,6 +264,14 @@ def _validate_mandate_data(data: dict, requested_amount_inr: int) -> dict:
     steps stale by the time it runs) and _atomic_reserve_spend (the authoritative, race-free
     check-and-commit run against freshly reloaded state under a lock). Keeping one copy of the
     rules means the two can never silently drift apart."""
+    if requested_amount_inr <= 0:
+        # A non-positive amount isn't just a bad purchase, it's an attack on the mandate's own
+        # accounting: a negative requested_amount_inr would make new_total < amount_spent_so_far,
+        # i.e. spending money *reduces* recorded cumulative spend, permanently growing the
+        # mandate's remaining headroom (and defeating single_use, which is gated on
+        # amount_spent_so_far_inr > 0) instead of consuming it. Rejected unconditionally, before
+        # any of the limit/expiry math below runs.
+        return {"allowed": False, "reason": f"Requested amount {requested_amount_inr} must be a positive number of INR."}
     now = time.time()
     if now > data["expires_at"]:
         return {"allowed": False, "reason": f"Mandate {data['mandate_id']} expired at {data['expires_at']}, current time {now}."}
