@@ -132,30 +132,38 @@ def remediate_overcharge(order_id: str, admin_username: str) -> dict:
     captured total exceeds what this order was ever meant to charge. Re-verifies fresh against
     Razorpay right before acting, rather than trusting a check_live_drift() result computed even
     a few seconds earlier -- so a refund already issued by someone else in the meantime (or a
-    second admin double-clicking the same button) can't double-refund the same order."""
-    entry = next((e for e in guardrail.load_ledger() if e.get("razorpay_order_id") == order_id), None)
-    if entry is None:
-        return {"status": "error", "detail": f"No ledger entry found for order {order_id!r}."}
-    expected_inr = entry.get("expected_amount_inr")
-    if expected_inr is None:
-        return {"status": "error", "detail": "This order has no expected amount on record -- can't compute a refund."}
+    second admin double-clicking the same button) can't double-refund the same order.
 
-    live = verify_order_against_razorpay(order_id)
-    diff = live["razorpay_captured_amount_inr"] - expected_inr
-    if diff <= AMOUNT_TOLERANCE_INR:
-        return {
-            "status": "no_action_needed",
-            "detail": f"Re-checked Razorpay just now -- no overcharge remains (currently "
-                      f"{live['razorpay_captured_amount_inr']} INR captured, {expected_inr} INR expected). "
-                      f"Someone may have already fixed this.",
-        }
-    if not live["captured_payment_id"]:
-        return {"status": "error", "detail": "No captured payment id found on Razorpay's side to refund against."}
+    The whole re-verify-then-refund sequence runs under guardrail's own store-wide lock: the
+    re-verify alone isn't enough to make double-clicking safe, since two concurrent calls could
+    both fetch the same "not yet refunded" state from Razorpay before either one's refund_payment
+    call lands -- both would then see the identical diff and both would issue a real refund.
+    Serializing here closes that window the same way every other money-moving path in this
+    codebase (guardrail.py's _atomic_reserve_spend, _atomic_confirm_and_reserve) already does."""
+    with guardrail.mandate_store_lock():
+        entry = next((e for e in guardrail.load_ledger() if e.get("razorpay_order_id") == order_id), None)
+        if entry is None:
+            return {"status": "error", "detail": f"No ledger entry found for order {order_id!r}."}
+        expected_inr = entry.get("expected_amount_inr")
+        if expected_inr is None:
+            return {"status": "error", "detail": "This order has no expected amount on record -- can't compute a refund."}
 
-    refund = razorpay_rest.refund_payment(live["captured_payment_id"], diff)
-    log_event(
-        "reconciliation", "live_drift_remediation",
-        {"order_id": order_id, "admin": admin_username, "payment_id": live["captured_payment_id"], "refund_amount_inr": diff},
-        {"razorpay_refund_id": refund.get("id"), "razorpay_status": refund.get("status")}, "ok",
-    )
-    return {"status": "refunded", "refund_amount_inr": diff, "razorpay_refund_id": refund.get("id"), "raw": refund}
+        live = verify_order_against_razorpay(order_id)
+        diff = live["razorpay_captured_amount_inr"] - expected_inr
+        if diff <= AMOUNT_TOLERANCE_INR:
+            return {
+                "status": "no_action_needed",
+                "detail": f"Re-checked Razorpay just now -- no overcharge remains (currently "
+                          f"{live['razorpay_captured_amount_inr']} INR captured, {expected_inr} INR expected). "
+                          f"Someone may have already fixed this.",
+            }
+        if not live["captured_payment_id"]:
+            return {"status": "error", "detail": "No captured payment id found on Razorpay's side to refund against."}
+
+        refund = razorpay_rest.refund_payment(live["captured_payment_id"], diff)
+        log_event(
+            "reconciliation", "live_drift_remediation",
+            {"order_id": order_id, "admin": admin_username, "payment_id": live["captured_payment_id"], "refund_amount_inr": diff},
+            {"razorpay_refund_id": refund.get("id"), "razorpay_status": refund.get("status")}, "ok",
+        )
+        return {"status": "refunded", "refund_amount_inr": diff, "razorpay_refund_id": refund.get("id"), "raw": refund}
