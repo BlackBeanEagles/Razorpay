@@ -15,8 +15,24 @@ import requests
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_URL = "https://api.resend.com/emails"
 FROM_ADDRESS = "TechBazaar Support <onboarding@resend.dev>"
+_PLACEHOLDER_KEY = "re_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-EMAIL_AVAILABLE = bool(RESEND_API_KEY) and RESEND_API_KEY.startswith("re_")
+
+def _is_real_key(key: str) -> bool:
+    """True only for a key that looks like a genuine Resend key -- not empty, not the literal
+    placeholder value from .env.example. Factored out (rather than one inline expression at
+    import time, the pattern this codebase's other two "_AVAILABLE" flags used) specifically so
+    this exact logic is unit-testable: this used to check only the "re_" prefix, which the
+    placeholder itself also matches, so anyone who copied .env.example to .env without replacing
+    RESEND_API_KEY would have EMAIL_AVAILABLE silently report "configured" and send_email() would
+    go on to make a real, doomed API call to Resend with a fake key on every support request,
+    instead of cleanly skipping the same way an actually-absent key does. That gap had no test
+    covering the detection logic itself (every existing test monkeypatched EMAIL_AVAILABLE
+    directly) -- see test_mailer.py's tests for this function."""
+    return bool(key) and key != _PLACEHOLDER_KEY and key.startswith("re_")
+
+
+EMAIL_AVAILABLE = _is_real_key(RESEND_API_KEY)
 
 
 def send_email(to_email: str, subject: str, body_text: str) -> dict:

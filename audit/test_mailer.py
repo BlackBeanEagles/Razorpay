@@ -7,6 +7,26 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from audit import mailer
 
 
+def test_placeholder_key_from_env_example_is_never_treated_as_configured():
+    # The real bug this pins: .env.example's literal placeholder (re_xxxxxxxxxxxxxxxxxxxxxxxxxxxx)
+    # starts with "re_" just like a genuine key would, so a naive prefix-only check reports it as
+    # configured. Anyone who copies .env.example to .env without replacing this value would then
+    # have send_email() attempt a real, doomed API call to Resend on every support request.
+    assert mailer._is_real_key(mailer._PLACEHOLDER_KEY) is False
+
+
+def test_empty_key_is_not_configured():
+    assert mailer._is_real_key("") is False
+
+
+def test_a_real_looking_key_is_configured():
+    assert mailer._is_real_key("re_abc123realkey") is True
+
+
+def test_a_key_with_the_wrong_prefix_is_not_configured():
+    assert mailer._is_real_key("sk_wrongprefix") is False
+
+
 def test_send_email_without_recipient_fails_honestly(monkeypatch):
     monkeypatch.setattr(mailer, "EMAIL_AVAILABLE", True)
     result = mailer.send_email("", "subject", "body")
