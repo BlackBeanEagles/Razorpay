@@ -64,6 +64,41 @@ def seconds_until_unlocked(key: str) -> float:
         return max(0.0, remaining)
 
 
+def reserve_attempt(key: str) -> float:
+    """Atomically checks whether key is currently locked out AND, if not, immediately records
+    this attempt -- as ONE operation under a single lock acquisition, before the caller does its
+    own comparatively slow (~100ms PBKDF2-HMAC-SHA256) password verification.
+
+    A route that instead calls seconds_until_unlocked() (a separately-locked read) and only
+    later calls record_failure() (a separately-locked write) after verify_login/verify_credentials
+    returns leaves a real window between the two: many concurrent requests for the same key can
+    all read the same under-the-limit count before any of them has committed a failure, letting a
+    concurrent burst make far more than MAX_ATTEMPTS real password guesses before the lockout
+    ever engages. Reserving the attempt slot up front, before the slow hash even starts, closes
+    that window -- each concurrent request claims its own slot atomically, so the (MAX_ATTEMPTS+1)th
+    concurrent request sees itself already locked out regardless of how many earlier ones are
+    still mid-hash.
+
+    Returns 0.0 if the attempt was allowed and has been recorded (the caller should proceed to
+    verify the password, and call record_success() on a match -- do NOT also call
+    record_failure() on a mismatch, this already counted as one), or the remaining lockout
+    seconds if the key was already locked out (nothing recorded in that case -- a key that's
+    already locked doesn't get to extend its own lockout by trying again)."""
+    with file_lock(_LOCK_PATH):
+        data = _load()
+        now = time.time()
+        recent = [t for t in data.get(key, []) if now - t < WINDOW_SECONDS]
+        if len(recent) >= MAX_ATTEMPTS:
+            oldest_counted = recent[-MAX_ATTEMPTS]
+            data[key] = recent
+            _save(data)
+            return max(0.0, LOCKOUT_SECONDS - (now - oldest_counted))
+        recent.append(now)
+        data[key] = recent
+        _save(data)
+        return 0.0
+
+
 def record_failure(key: str) -> None:
     with file_lock(_LOCK_PATH):
         data = _load()

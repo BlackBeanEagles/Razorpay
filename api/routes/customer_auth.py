@@ -55,13 +55,17 @@ def signup(body: SignupRequest, request: Request, response: Response):
 @router.post("/api/customer/login")
 def login(body: LoginRequest, request: Request, response: Response):
     rate_key = f"customer:{body.username}"
-    locked_for = rate_limit.seconds_until_unlocked(rate_key)
+    # reserve_attempt checks the lockout AND records this attempt as one atomic operation,
+    # before the slow password hash below runs -- see its docstring for why a separately-locked
+    # check followed by a separately-locked record_failure() leaves a concurrency window that
+    # lets a burst of simultaneous requests blow past MAX_ATTEMPTS.
+    locked_for = rate_limit.reserve_attempt(rate_key)
     if locked_for > 0:
         raise HTTPException(status_code=429, detail=f"Too many failed attempts -- try again in {int(locked_for)}s.")
 
     account = customer_auth.verify_login(body.username, body.password)
     if account is None:
-        rate_limit.record_failure(rate_key)
+        # No record_failure() here -- reserve_attempt() already counted this attempt.
         raise HTTPException(status_code=401, detail="Invalid username or password.")
     rate_limit.record_success(rate_key)
 
