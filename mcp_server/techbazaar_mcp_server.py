@@ -130,6 +130,19 @@ def purchase(product_id: str, amount_inr: int, ai_buyer_id: str, mandate_id: str
         token = guardrail.get_mandate_token(mandate_id, requesting_customer_id=ai_buyer_id)
     except KeyError:
         return {"status": "blocked", "reason": f"Unknown or inaccessible mandate_id: {mandate_id}"}
+    # Enforced here in code, not left to the calling agent's own good behavior: this server's
+    # own `instructions` ask a buyer to call check_price_fairness before purchase, but an
+    # external agent can just... not (skip it, or ignore the instructions entirely). Guardrail
+    # itself only enforces the mandate ceiling, never the offered price against the product's
+    # real value -- without this, purchase(product_id="laptop_premium", amount_inr=1, ...) would
+    # succeed for any mandate with >=1 INR of headroom. Re-checked here regardless of whether
+    # the buyer already called check_price_fairness itself.
+    fairness = _check_price_fairness(product_id, ai_buyer_id, amount_inr)
+    if fairness["verdict"] == "flagged":
+        return {
+            "status": "blocked", "checkout": None, "razorpay_order_id": None, "verification": None,
+            "reason": f"Price fairness check failed, purchase not attempted: {fairness['reason']}",
+        }
     return guardrail.resolve_purchase(token, product_id, amount_inr, requesting_customer_id=ai_buyer_id)
 
 
