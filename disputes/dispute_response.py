@@ -135,6 +135,26 @@ def record_dispute_created(dispute_id: str, payment_id: str, razorpay_order_id: 
     because a dispute_id that doesn't actually exist on this test-mode account (there's no
     self-serve way to create a real one) will legitimately 404, which is reported honestly on
     the record rather than hidden or treated as a crash."""
+    with _LOCK:
+        existing = _load().get(dispute_id)
+    if existing is not None and existing.get("status") != "draft_pending":
+        # Razorpay redelivers webhooks (e.g. on a slow/ambiguous response), and payment.
+        # dispute.created is no exception. Without this check, a redelivery arriving after an
+        # admin has already submitted this dispute's response (status "submitted", or a real
+        # Razorpay-driven outcome like "accepted"/won/lost/closed) would unconditionally
+        # overwrite the record back to "draft_pending" with submitted_at/submitted_by wiped,
+        # AND fire a second draft-mode contest_dispute() call to Razorpay for a dispute that's
+        # already past the draft stage -- silently losing the local audit trail of who/when it
+        # was actually submitted. A redelivery for a dispute still sitting at "draft_pending"
+        # (never progressed) is harmless to reprocess, so only a later-stage status short-circuits.
+        log_event(
+            "disputes", "dispute_response_drafted",
+            {"dispute_id": dispute_id, "razorpay_order_id": razorpay_order_id, "amount_inr": amount_inr},
+            {"detail": f"Webhook redelivery ignored -- dispute already at status {existing['status']!r}."},
+            "ok",
+        )
+        return existing
+
     evidence = draft_evidence_from_audit_trail(razorpay_order_id)
 
     razorpay_draft = {"attempted": False, "saved": False, "detail": None}
