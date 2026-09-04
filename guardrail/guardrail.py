@@ -11,6 +11,7 @@ from audit.audit_log import log_event
 from guardrail import mandate as mandate_mod
 from guardrail import razorpay_client
 from guardrail import razorpay_rest
+from api.file_lock import file_lock as _shared_file_lock
 
 # execute_purchase() below always uses the deterministic mock client (razorpay_client.py) so
 # the test suite and batch runs stay fast, reproducible, and always completable -- a real
@@ -25,10 +26,17 @@ MANDATE_STORE_PATH = os.path.join(os.path.dirname(__file__), "mandates.json")
 LEDGER_PATH = os.path.join(os.path.dirname(__file__), "ledger.json")
 PENDING_PURCHASES_PATH = os.path.join(os.path.dirname(__file__), "pending_purchases.json")
 _LOCK_PATH = MANDATE_STORE_PATH + ".lock"
-_LOCK_ACQUIRE_TIMEOUT_SECONDS = 5
-_LOCK_STALE_SECONDS = 10  # a lock file older than this is assumed abandoned by a crashed
-                          # process, not real contention -- otherwise one crash mid-update
-                          # would permanently deadlock every future purchase.
+
+
+def _atomic_write_json(path: str, data) -> None:
+    """Write-temp-then-rename so a process killed mid-write (OOM, host preemption, power loss)
+    can never leave a truncated/invalid store on disk -- os.replace is atomic on both Windows
+    and POSIX, so readers only ever see the old complete file or the new complete file, never a
+    half-written one. Every save of mandates.json/ledger.json goes through this."""
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp_path, path)
 
 # Snapshotted before anything can call use_isolated_store() -- the only way back to the real,
 # production mandate/ledger files once some other test file's isolation has redirected the
@@ -85,38 +93,23 @@ def _mandate_store_lock():
     check, and whichever writes last silently discards the other's spend update -- letting the
     mandate limit be exceeded despite every individual check having "passed." Everything that
     reads-then-writes mandate spend must hold this lock for the whole read-check-write, not
-    just the final write, or the race just moves earlier."""
-    deadline = time.time() + _LOCK_ACQUIRE_TIMEOUT_SECONDS
-    while True:
-        try:
-            fd = os.open(_LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.close(fd)
-            break
-        except (FileExistsError, PermissionError):
-            # PermissionError, not just FileExistsError, is possible here on Windows: another
-            # thread's os.remove() of this same lockfile can leave it in a transient
-            # delete-pending state where a concurrent os.open(O_CREAT|O_EXCL) is denied access
-            # rather than told the file exists. Treated identically -- someone else holds the
-            # lock (or just released it), so retry -- since without this, that PermissionError
-            # would propagate uncaught out of a purchase thread instead of just waiting its turn.
-            try:
-                if time.time() - os.path.getmtime(_LOCK_PATH) > _LOCK_STALE_SECONDS:
-                    os.remove(_LOCK_PATH)
-                    continue
-            except OSError:
-                pass  # another process cleaned it up between our check and remove -- fine
-            if time.time() > deadline:
-                raise TimeoutError(
-                    "Timed out waiting for the mandate store lock -- another purchase may be stuck mid-update."
-                )
-            time.sleep(0.05)
-    try:
+    just the final write, or the race just moves earlier.
+
+    This is a thin wrapper around api.file_lock.file_lock -- the actual atomic-lockfile-creation
+    (including Windows' PermissionError-during-delete handling and the PID-liveness check before
+    reclaiming an aged lock) lives there as the ONE shared implementation, not duplicated here."""
+    with _shared_file_lock(_LOCK_PATH):
         yield
-    finally:
-        try:
-            os.remove(_LOCK_PATH)
-        except OSError:
-            pass
+
+
+@contextmanager
+def mandate_store_lock():
+    """Public entry point to the same guardrail-wide lock _mandate_store_lock uses internally --
+    for other modules (reconciliation/live_verification.py's remediate_overcharge, specifically)
+    that need to serialize a real-money action against everything else touching this store,
+    rather than reaching into the underscore-prefixed internal name directly."""
+    with _mandate_store_lock():
+        yield
 
 
 def reset_mandate_store():
@@ -146,8 +139,7 @@ def reset_mandate_store():
             "owner_customer_id": None,
         }
         store[m["mandate_id"]] = mandate_mod.encode_mandate(internal)
-    with open(MANDATE_STORE_PATH, "w", encoding="utf-8") as f:
-        json.dump(store, f, indent=2)
+    _atomic_write_json(MANDATE_STORE_PATH, store)
     return store
 
 
@@ -159,8 +151,7 @@ def _load_mandate_store() -> dict:
 
 
 def _save_mandate_store(store: dict):
-    with open(MANDATE_STORE_PATH, "w", encoding="utf-8") as f:
-        json.dump(store, f, indent=2)
+    _atomic_write_json(MANDATE_STORE_PATH, store)
 
 
 def _owned_by(data: dict, requesting_customer_id: str) -> bool:
@@ -386,8 +377,7 @@ def _append_ledger(entry: dict):
     with _mandate_store_lock():  # same lock as spend updates -- ledger and spend must agree
         ledger = _load_ledger()
         ledger.append(entry)
-        with open(LEDGER_PATH, "w", encoding="utf-8") as f:
-            json.dump(ledger, f, indent=2)
+        _atomic_write_json(LEDGER_PATH, ledger)
 
 
 def _reserve_spend_locked(mandate_id: str, requested_amount_inr: int) -> dict:
@@ -462,8 +452,7 @@ def _atomic_confirm_and_reserve(razorpay_order_id: str, mandate_id: str, product
                 "requesting_customer_id": requesting_customer_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
-            with open(LEDGER_PATH, "w", encoding="utf-8") as f:
-                json.dump(ledger, f, indent=2)
+            _atomic_write_json(LEDGER_PATH, ledger)
         return None, reserve
 
 
