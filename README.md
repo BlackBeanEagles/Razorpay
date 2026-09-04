@@ -103,6 +103,21 @@ Each writes scored results to `batch_tests/results/*.json` (served by `/api/batc
 
 Re-run the batch scripts above to regenerate these from scratch. The dashboard's **Live activity** panel is separate from all of this — it's not a batch score, it's real counts that only move when a real customer or AI buyer actually does something.
 
+## Security review: what broke, and what we did about it
+
+A dedicated review of the money-critical paths (Guardrail, auth, webhooks, MCP) surfaced 10 real bugs — not style nits, concrete failure scenarios with a reproduction each. All 10 are fixed, each as its own commit with the exploit and the fix explained in the message (`git log`), and all 237 tests plus every batch script's numbers above were re-verified unchanged after every fix.
+
+- **Guardrail never rejected a non-positive purchase amount** — `execute_purchase(token, "p001", -999999)` would drive a mandate's recorded spend negative, permanently growing its remaining headroom instead of consuming it, and defeating `single_use` along the way. Now rejected unconditionally before any limit/expiry check runs.
+- **`confirm_purchase`'s idempotency check leaked cross-customer data** — it matched a prior successful order by `razorpay_order_id` alone, so a different customer who merely knew or guessed a real order id could retrieve another customer's real verification data with no ownership check. Now scoped to the requesting customer.
+- **`remediate_overcharge` had no lock** — two near-simultaneous admin clicks (or two admins) could both re-verify against Razorpay before either refund landed, and both issue a real refund for the same overcharge. Now serialized under Guardrail's own store lock.
+- **The login rate limiter had a check-then-act race** — the lockout check and the failure record were two separately-locked steps with a ~100ms PBKDF2 hash unlocked in between, so a concurrent burst of login attempts could blow past the 5-attempt cap. Now one atomic reserve-and-check operation.
+- **A malformed-but-validly-signed webhook payload crashed with a 500** instead of the intended clean, non-retried 4xx — a non-object JSON body, or a key present with value `null`, hit an unhandled `AttributeError`/`TypeError`. Now caught centrally and reported honestly.
+- **A redelivered `payment.dispute.created` webhook reverted an already-submitted dispute back to draft**, wiping the record of who submitted it and when. Now a no-op once the local record has moved past `draft_pending`.
+- **The negotiation round cap (`MAX_ROUNDS`) trusted the caller's own `round_number`** — a buyer that always sent `round_number=1` got an uncapped, unbounded number of negotiation rounds. Now server-tracked per `(product_id, customer_id)`, so the cap holds regardless of what the caller claims.
+- **MCP `ai_buyer_id`s were sequential and guessable** (`ai_buyer_001`, `ai_buyer_002`, ...) with no auth behind them, letting any MCP caller enumerate other buyers and probe their loyalty-tier/discount data. Now `secrets.token_hex(8)`-based.
+- **Neither the MCP server's `purchase()` nor the chat agent's `execute_purchase` tool actually enforced price fairness in code** — both only *asked* the calling agent (via instructions/system prompt) to call `check_price_fairness` first, so `purchase(product_id="laptop_premium", amount_inr=1, ...)` would previously succeed outright for any mandate with ≥1 INR of headroom. Both now call `check_price_fairness` themselves and refuse a flagged price regardless of what the caller did.
+- **Two independent, drifted copies of the same atomic-lockfile technique** (`guardrail.py`'s own lock, `api/file_lock.py`) reclaimed a lock purely by file age, with no check the holder was actually dead — a holder running long under real contention could have its lock stolen while still live. Consolidated into one shared implementation with a PID-liveness check before any reclaim.
+
 ## Repository structure
 
 See `BUILD_SPEC.md` section 3 for the intended layout; this repo follows it, extended with `reconciliation/`, `mcp_server/`, and `growth/` for the additions above.
