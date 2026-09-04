@@ -116,21 +116,42 @@ async def razorpay_webhook(request: Request):
     except json.JSONDecodeError:
         return {"ok": False, "detail": "Invalid JSON payload."}
 
+    if not isinstance(event, dict):
+        # json.loads only raises JSONDecodeError for syntactically invalid JSON -- a
+        # syntactically valid but non-object top-level payload (`null`, `[]`, a bare string or
+        # number) parses fine and would otherwise crash the very next line's .get("event") with
+        # an unhandled AttributeError. A signature-verified request that's shaped like this
+        # isn't going to become well-shaped on retry, so this is the same honest, non-retried
+        # {"ok": False} response signature failures get, not a 500.
+        log_event("guardrail", "webhook_received", {}, {"detail": f"payload is not a JSON object (got {type(event).__name__})"}, "blocked")
+        return {"ok": False, "detail": "Payload must be a JSON object."}
+
     event_type = event.get("event")
     if event_type not in _HANDLED_EVENTS:
         return {"ok": True, "detail": f"Event {event_type!r} not handled, ignored."}
 
-    if event_type in _DISPUTE_STATUS_EVENTS:
-        return _handle_dispute_status_event(event_type, event)
-    if event_type == _DISPUTE_CREATED_EVENT:
-        return _handle_dispute_created(event)
-    if event_type == _SUBSCRIPTION_CHARGED_EVENT:
-        return _handle_subscription_charged(event)
-    if event_type in _SUBSCRIPTION_STATUS_EVENTS:
-        return _handle_subscription_status_event(event_type, event)
-    if event_type == _PAYMENT_LINK_PAID_EVENT:
-        return _handle_payment_link_paid(event)
-    return _handle_payment_captured(event_type, event)
+    try:
+        if event_type in _DISPUTE_STATUS_EVENTS:
+            return _handle_dispute_status_event(event_type, event)
+        if event_type == _DISPUTE_CREATED_EVENT:
+            return _handle_dispute_created(event)
+        if event_type == _SUBSCRIPTION_CHARGED_EVENT:
+            return _handle_subscription_charged(event)
+        if event_type in _SUBSCRIPTION_STATUS_EVENTS:
+            return _handle_subscription_status_event(event_type, event)
+        if event_type == _PAYMENT_LINK_PAID_EVENT:
+            return _handle_payment_link_paid(event)
+        return _handle_payment_captured(event_type, event)
+    except (AttributeError, TypeError, KeyError) as e:
+        # A handler's nested `.get("x", {}).get("y")`-style access only substitutes its default
+        # when the key is ABSENT -- a key present with value null still returns None, and the
+        # next .get()/subscript on that None raises exactly one of these. A real Razorpay event
+        # is never shaped like this, but a redelivery/replay tool or a malformed edge case
+        # could be; caught centrally here so every handler gets the same honest, non-retried
+        # {"ok": False} response instead of an unhandled 500, without patching every individual
+        # .get() chain across five separate handler functions.
+        log_event("guardrail", "webhook_received", {"event": event_type}, {"detail": f"malformed payload: {e}"}, "blocked")
+        return {"ok": False, "detail": f"Malformed payload for event {event_type!r}: {e}"}
 
 
 def _handle_payment_captured(event_type: str, event: dict) -> dict:
