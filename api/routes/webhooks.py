@@ -51,7 +51,22 @@ from subscriptions import allowance_subscription
 router = APIRouter()
 
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
-WEBHOOK_VERIFICATION_AVAILABLE = bool(RAZORPAY_WEBHOOK_SECRET)
+_PLACEHOLDER_SECRET = "replace-with-the-secret-shown-in-your-dashboard"
+
+
+def _is_real_secret(secret: str) -> bool:
+    """True only for a secret that isn't empty and isn't the literal placeholder value from
+    .env.example. Same bug class already found and fixed in audit/mailer.py's EMAIL_AVAILABLE:
+    a bare bool(secret) check treats the placeholder as "configured", which here doesn't open a
+    security hole (a real Razorpay webhook would still fail HMAC verification against the
+    placeholder, since Razorpay signs with its own real secret) but is still a misleading
+    self-report -- and specifically breaks the "is real Razorpay actually wired up" verification
+    story, since this would claim webhook verification is active when nobody has actually
+    configured it yet."""
+    return bool(secret) and secret != _PLACEHOLDER_SECRET
+
+
+WEBHOOK_VERIFICATION_AVAILABLE = _is_real_secret(RAZORPAY_WEBHOOK_SECRET)
 
 # Event types this handler acts on -- payment.captured is the direct, unambiguous "money moved"
 # signal. order.paid fires for the same underlying event and would just be redundant work.

@@ -124,6 +124,22 @@ def _call_webhook(body: bytes, signature: str = None) -> dict:
     return asyncio.run(webhooks.razorpay_webhook(FakeRequest(body, signature)))
 
 
+def test_placeholder_secret_from_env_example_is_never_treated_as_configured():
+    # The real bug this pins: .env.example's literal placeholder is a non-empty string, so a
+    # naive bool(secret) check reports it as configured. Anyone who copied .env.example to .env
+    # without replacing RAZORPAY_WEBHOOK_SECRET would have WEBHOOK_VERIFICATION_AVAILABLE
+    # silently report True for a secret nobody actually set.
+    assert webhooks._is_real_secret(webhooks._PLACEHOLDER_SECRET) is False
+
+
+def test_empty_secret_is_not_configured():
+    assert webhooks._is_real_secret("") is False
+
+
+def test_a_real_looking_secret_is_configured():
+    assert webhooks._is_real_secret("a_genuinely_random_secret_value") is True
+
+
 def test_unconfigured_secret_refuses_every_webhook():
     setup()
     webhooks.WEBHOOK_VERIFICATION_AVAILABLE = False
