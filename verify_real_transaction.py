@@ -6,9 +6,14 @@ What this script does automatically, via real MCP tool calls:
   2. Writes a local checkout.html wired to that real order ID.
 
 What it deliberately leaves to you, the human, in the browser:
-  3. Clicking "Pay" and entering Razorpay's published test-mode card (4111 1111 1111 1111,
-     any future expiry, any CVV) into Razorpay's own hosted Checkout UI. Card entry isn't
-     something this script automates.
+  3. Clicking "Pay" and entering one of Razorpay's own published DOMESTIC test-mode cards
+     (e.g. 4100 2800 0000 1007, any future expiry, any CVV, any 4-10 digit OTP) into Razorpay's
+     own hosted Checkout UI -- see https://razorpay.com/docs/payments/payments/test-card-details/
+     for the full list. A generic international-looking test number (4111 1111 1111 1111, the
+     universal placeholder many OTHER processors use) gets a real, correct rejection from
+     Razorpay's gateway ("International cards are not supported") since it isn't one of their
+     own domestic test BINs -- found the hard way while verifying this script before a demo
+     recording. Card entry isn't something this script automates.
 
 Then, back here:
   4. Calls fetch_order_payments (a real MCP tool) to confirm the payment captured, and prints
@@ -80,8 +85,10 @@ def main():
 
     write_checkout_html(order_id, mcp_client.RAZORPAY_KEY_ID, DEMO_AMOUNT_INR)
     print(f"Checkout page written to {CHECKOUT_HTML_PATH}")
-    print("Open it, click 'Pay with Razorpay', and enter Razorpay's test-mode card:")
-    print("  Card number: 4111 1111 1111 1111  |  Expiry: any future date  |  CVV: any 3 digits")
+    print("Open it, click 'Pay with Razorpay', and enter one of Razorpay's own DOMESTIC test cards:")
+    print("  Card number: 4100 2800 0000 1007  |  Expiry: any future date  |  CVV: any digits  |  OTP: any 4-10 digits")
+    print("  (NOT 4111 1111 1111 1111 -- that's a generic international test BIN and Razorpay's")
+    print("  gateway will correctly reject it as an unsupported international card.)")
     print("Then re-run this script with --verify to confirm the payment via MCP.")
 
 
