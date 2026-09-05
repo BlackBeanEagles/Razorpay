@@ -1,6 +1,53 @@
 # TechBazaar — Shelf + Parity + Guardrail
 
-A discover -> price fairly -> buy -> verify pipeline sitting in front of Razorpay's payment infrastructure, with a backend API layer, a real-money-adjacent reconciliation loop, an MCP server for external AI buyers, and a two-view frontend (customer storefront + merchant/audit dashboard). See [ARCHITECTURE.md](ARCHITECTURE.md) for how it all fits together and how it maps to the hackathon tracks, [BUILD_SPEC.md](BUILD_SPEC.md) for the full spec, and [trust-but-verify-agent-spec.md](trust-but-verify-agent-spec.md) for the pitch narrative this was built from.
+A discover -> price fairly -> buy -> verify pipeline sitting in front of Razorpay's payment infrastructure, with a backend API layer, a real-money-adjacent reconciliation loop, an MCP server for external AI buyers, and a two-view frontend (customer storefront + merchant/audit dashboard). See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system diagram, how it all fits together, and how it maps to the hackathon tracks; [BUILD_SPEC.md](BUILD_SPEC.md) for the full spec; and [trust-but-verify-agent-spec.md](trust-but-verify-agent-spec.md) for the pitch narrative this was built from.
+
+## Architecture
+
+Every entry point — a human in the storefront chat, or an external AI agent over the real MCP protocol — calls the exact same `search_catalog` / `check_price_fairness` / `execute_purchase` functions underneath. No separate, weaker path for machines: an AI buyer gets no shortcut around mandate enforcement, fairness checks, or Razorpay verification.
+
+```mermaid
+flowchart TB
+    subgraph Buyers["Who initiates a purchase"]
+        Human["Human shopper\n(storefront chat)"]
+        AIBuyer["External AI agent\n(Claude Desktop, etc.)"]
+    end
+
+    subgraph Entry["Entry points, same pipeline underneath"]
+        LLMAgent["agent/llm_agent.py\nGroq tool-calling"]
+        DetAgent["agent/agent.py\ndeterministic fallback"]
+        MCPServer["mcp_server/techbazaar_mcp_server.py\nreal MCP protocol"]
+    end
+
+    subgraph Core["Core pipeline (shared, hardened once)"]
+        Shelf["Shelf\nsearch_catalog()"]
+        Parity["Parity\ncheck_price_fairness()"]
+        Guardrail["Guardrail\nexecute_purchase() / resolve_purchase()"]
+    end
+
+    Human --> LLMAgent
+    Human -.no GROQ_API_KEY.-> DetAgent
+    AIBuyer -->|tools/call| MCPServer
+    LLMAgent --> Shelf & Parity & Guardrail
+    DetAgent --> Shelf & Parity & Guardrail
+    MCPServer --> Shelf & Parity & Guardrail
+
+    Guardrail --> Razorpay["Razorpay\n(test mode)"]
+    Shelf & Parity & Guardrail --> AuditLog["audit/audit_log.jsonl\ntagged live/batch_test/unit_test"]
+    Razorpay --> Ledger["guardrail/ledger.json\nreal transaction ledger"]
+
+    Ledger --> Reconciliation["Reconciliation\nlive ledger + scored batch"]
+    Ledger --> LiveCheck["Live verification\nre-checks Razorpay's current state"]
+    Razorpay -->|payment.dispute.created| Disputes["Disputes\nAI-drafted evidence"]
+    Ledger --> Disputes
+
+    AuditLog --> Dashboard["Admin dashboard"]
+    Reconciliation --> Dashboard
+    LiveCheck --> Dashboard
+    Disputes --> Dashboard
+```
+
+This is the condensed view — the full diagram (subscriptions/recovery, bank statement cross-check, every webhook path) and the per-component rationale live in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Core pipeline
 
